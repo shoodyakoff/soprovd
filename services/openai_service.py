@@ -236,4 +236,109 @@ class OpenAIService:
             return True
             
         logger.warning(f"Ответ не заканчивается корректно: '{response[-50:]}'")
-        return False 
+        return False
+
+    async def generate_personalized_letter(self, prompt: str, temperature: Optional[float] = None) -> Optional[str]:
+        """
+        Генерирует письмо по готовому персонализированному промпту
+        
+        Args:
+            prompt: Готовый промпт для генерации
+            temperature: Температура для генерации (если нужно переопределить)
+            
+        Returns:
+            Сгенерированное письмо или None в случае ошибки
+        """
+        # Используем переданную температуру или берем из конфигурации
+        temp = temperature if temperature is not None else OPENAI_TEMPERATURE
+        
+        # Пробуем сгенерировать письмо с несколькими попытками
+        for attempt in range(MAX_GENERATION_ATTEMPTS):
+            try:
+                logger.info(f"Персонализированная генерация #{attempt + 1} (temp={temp})")
+                
+                response = await asyncio.wait_for(
+                    self._make_personalized_request(prompt, temp),
+                    timeout=OPENAI_TIMEOUT
+                )
+                
+                if response and self._is_response_complete(response):
+                    logger.info("Успешно сгенерировано персонализированное письмо")
+                    return response
+                else:
+                    logger.warning(f"Неполный ответ на попытке #{attempt + 1}")
+                    
+            except asyncio.TimeoutError:
+                logger.error(f"Таймаут на попытке #{attempt + 1}")
+            except Exception as e:
+                logger.error(f"Ошибка на попытке #{attempt + 1}: {e}")
+            
+        logger.error("Все попытки персонализированной генерации неуспешны")
+        return None
+
+    async def _make_personalized_request(self, prompt: str, temperature: float) -> Optional[str]:
+        """
+        Выполняет персонализированный запрос к OpenAI API
+        
+        Args:
+            prompt: Промпт для генерации
+            temperature: Температура генерации
+            
+        Returns:
+            Ответ от OpenAI или None в случае ошибки
+        """
+        try:
+            # Сначала пробуем основную модель
+            response = await self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=1500,
+                temperature=temperature,
+                top_p=OPENAI_TOP_P,
+                presence_penalty=OPENAI_PRESENCE_PENALTY,
+                frequency_penalty=OPENAI_FREQUENCY_PENALTY
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.warning(f"Ошибка с моделью {OPENAI_MODEL}: {e}")
+            
+            # Пробуем fallback модель
+            try:
+                response = await self.client.chat.completions.create(
+                    model=OPENAI_FALLBACK_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=1500,
+                    temperature=temperature,
+                    top_p=OPENAI_TOP_P,
+                    presence_penalty=OPENAI_PRESENCE_PENALTY,
+                    frequency_penalty=OPENAI_FREQUENCY_PENALTY
+                )
+                
+                return response.choices[0].message.content
+                
+            except Exception as fallback_e:
+                logger.error(f"Ошибка с fallback моделью {OPENAI_FALLBACK_MODEL}: {fallback_e}")
+                return None
+
+
+# Глобальный экземпляр сервиса для быстрого доступа  
+openai_service = OpenAIService()
+
+
+async def generate_letter_with_retry(prompt: str, temperature: Optional[float] = None) -> Optional[str]:
+    """
+    Удобная функция для генерации письма с готовым промптом
+    """
+    return await openai_service.generate_personalized_letter(prompt, temperature) 

@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from config import (
     TELEGRAM_BOT_TOKEN,
+    CHOOSING_MODE,
     WAITING_JOB_DESCRIPTION,
     WAITING_RESUME,
     WAITING_STYLE_CHOICE
@@ -25,7 +26,17 @@ from handlers.conversation import (
     handle_text_in_style_choice,
     cancel
 )
-from handlers.callback import handle_style_callback
+from handlers.callback import handle_style_callback, handle_mode_choice
+from handlers.personalized_conversation import (
+    start_personalized,
+    receive_job_description,
+    receive_resume,
+    handle_style_choice,
+    cancel_personalized,
+    WAITING_JOB_DESCRIPTION as PERS_WAITING_JOB,
+    WAITING_RESUME as PERS_WAITING_RESUME,
+    WAITING_STYLE_CONFIRMATION as PERS_WAITING_STYLE
+)
 
 # Настройка логирования
 logging.basicConfig(
@@ -70,10 +81,13 @@ def main():
     # Создаем приложение
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     
-    # Настройка ConversationHandler
+    # Объединенный ConversationHandler для обоих режимов
     conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            CHOOSING_MODE: [
+                CallbackQueryHandler(handle_mode_choice, pattern="^mode_")
+            ],
             WAITING_JOB_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_job_description)
             ],
@@ -83,27 +97,51 @@ def main():
             WAITING_STYLE_CHOICE: [
                 CallbackQueryHandler(handle_style_callback, pattern="^style_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_in_style_choice)
+            ],
+            # Персонализированные состояния
+            PERS_WAITING_JOB: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_job_description)
+            ],
+            PERS_WAITING_RESUME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_resume)
+            ],
+            PERS_WAITING_STYLE: [
+                CallbackQueryHandler(handle_style_choice, pattern="^style_")
             ]
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
             CommandHandler("start", start)  # Позволяем начать заново в любой момент
         ],
-        per_message=True,  # Важно! Отслеживаем состояние для каждого сообщения
-        allow_reentry=True  # Позволяем начать заново
+        allow_reentry=True,  # Позволяем начать заново
+        per_message=False,   # Исправляем предупреждение
+        per_chat=True,       # Один разговор на чат
+        per_user=True        # Один разговор на пользователя
     )
     
-    # Добавляем обработчики
+    # Добавляем обработчик
     application.add_handler(conversation_handler)
+    logger.info(f"🔥 ConversationHandler добавлен! States: {list(conversation_handler.states.keys())}")
     
-    # Обработчик для всех остальных сообщений
+    # Добавляем общий обработчик для отладки
+    async def debug_handler(update, context):
+        if update.message and update.effective_user:
+            logger.info(f"🔥 DEBUG: Получено сообщение от {update.effective_user.id}: '{update.message.text[:50]}...'")
+            logger.info(f"🔥 DEBUG: Текущее состояние: {context.user_data.get('state', 'unknown') if context.user_data else 'no_user_data'}")
+    
+    application.add_handler(MessageHandler(filters.ALL, debug_handler), group=1)
+    
+    # Обработчик команды help
     async def help_handler(update, context):
         await update.message.reply_text(
-            "Для создания сопроводительного письма используй команду /start\n"
-            "Для отмены текущего процесса используй команду /cancel"
+            "📋 <b>Доступные команды:</b>\n\n"
+            "🤖 /start - выбор режима работы\n"
+            "🎯 /personalized - персонализированный режим\n"
+            "❌ /cancel - отмена текущего процесса",
+            parse_mode='HTML'
         )
     
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
+    application.add_handler(CommandHandler("help", help_handler))
     
     logger.info("Бот LetterGenius запущен!")
     
