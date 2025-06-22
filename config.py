@@ -1,5 +1,6 @@
 """
-Конфигурация для Telegram-бота LetterGenius
+Конфигурация для Telegram-бота LetterGenius v4.0
+Простой поток: вакансия → резюме → письмо
 """
 import os
 from dotenv import load_dotenv
@@ -11,22 +12,10 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-# Состояния разговора
-CHOOSING_MODE = 0
-WAITING_JOB_DESCRIPTION = 1
-WAITING_RESUME = 2
-WAITING_STYLE_CHOICE = 3
-GENERATING = 4
-
-# Стили писем
-STYLE_NEUTRAL = "neutral"
-STYLE_BOLD = "bold"
-STYLE_FORMAL = "formal"
-
 # Настройки OpenAI
 OPENAI_MODEL = "gpt-4o"
 OPENAI_FALLBACK_MODEL = "gpt-4"
-OPENAI_TIMEOUT = 60
+OPENAI_TIMEOUT = 120  # Увеличен для сложных анализов
 MAX_GENERATION_ATTEMPTS = 3
 
 # Параметры генерации OpenAI

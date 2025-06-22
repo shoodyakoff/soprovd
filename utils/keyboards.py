@@ -1,29 +1,15 @@
 """
-Inline-клавиатуры для бота
+Inline-клавиатуры для бота LetterGenius v4.0
+В v4.0 используется простой поток без выбора режимов и стилей
 """
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-def get_style_keyboard():
-    """
-    Создает inline-клавиатуру для выбора стиля письма
-    """
-    keyboard = [
-        [InlineKeyboardButton("Нейтральный", callback_data="style_neutral")],
-        [InlineKeyboardButton("Смелый", callback_data="style_bold")],
-        [InlineKeyboardButton("Формальный", callback_data="style_formal")],
-    ]
-    
-    return InlineKeyboardMarkup(keyboard)
+# В v4.0 клавиатуры не используются - простой текстовый поток
+# Оставляем файл для совместимости, но функции не нужны
 
-
-def get_main_menu():
+def get_simple_keyboard():
     """
-    Создает главное меню выбора режима
+    Заглушка для совместимости
+    В v4.0 не используются клавиатуры
     """
-    keyboard = [
-        [InlineKeyboardButton("🔥 Умный генератор v3.0", callback_data="mode_v3")],
-        [InlineKeyboardButton("🎯 Персонализированный", callback_data="mode_personalized")],
-        [InlineKeyboardButton("⚡ Классический", callback_data="mode_classic")],
-    ]
-    
-    return InlineKeyboardMarkup(keyboard) 
+    return None 

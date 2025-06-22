@@ -256,7 +256,8 @@ class OpenAIService:
             Ответ от GPT или None в случае ошибки
         """
         try:
-            logger.info(f"🤖 Отправляю запрос к GPT (temp={temperature}, max_tokens={max_tokens})")
+            logger.info(f"🤖 Отправляю запрос к GPT (temp={temperature}, max_tokens={max_tokens}, timeout={OPENAI_TIMEOUT}s)")
+            logger.info(f"📝 Длина промпта: {len(prompt)} символов")
             
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
