@@ -1,5 +1,5 @@
 """
-Inline-клавиатуры для бота LetterGenius v4.0
+Inline-клавиатуры для бота Сопровод v4.0
 В v4.0 используется простой поток без выбора режимов и стилей
 """
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup

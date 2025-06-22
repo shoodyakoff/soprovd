@@ -1,0 +1,44 @@
+# Виртуальное окружение
+venv/
+.venv/
+
+# Файлы окружения
+.env
+.env.local
+.env.dev
+.env.prod
+
+# Логи
+*.log
+logs/
+bot.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Тестовые файлы
+test_*.py
+*_test.py
+
+# Документация
+*.md
+tz*.md
+
+# Временные файлы
+*.tmp
+*.temp 
