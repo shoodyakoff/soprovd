@@ -13,4 +13,17 @@ def get_style_keyboard():
         [InlineKeyboardButton("Формальный", callback_data="style_formal")],
     ]
     
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_main_menu():
+    """
+    Создает главное меню выбора режима
+    """
+    keyboard = [
+        [InlineKeyboardButton("🔥 Умный генератор v3.0", callback_data="mode_v3")],
+        [InlineKeyboardButton("🎯 Персонализированный", callback_data="mode_personalized")],
+        [InlineKeyboardButton("⚡ Классический", callback_data="mode_classic")],
+    ]
+    
     return InlineKeyboardMarkup(keyboard) 

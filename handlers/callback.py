@@ -124,6 +124,12 @@ async def handle_mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Переходим к персонализированному ожиданию описания вакансии
         return PERS_WAITING_JOB
     
+    elif choice == "mode_v3":
+        # v3.0 режим - НЕ обрабатываем здесь, пусть обрабатывает v3_conversation_handler
+        logger.info(f"🚀 User {update.effective_user.id} выбрал v3.0 режим - передаем в v3_conversation_handler")
+        # Возвращаем END, чтобы v3_conversation_handler мог перехватить
+        return ConversationHandler.END
+    
     else:
         await query.edit_message_text(
             "❌ Неизвестный режим. Попробуйте еще раз с /start"

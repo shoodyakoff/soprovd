@@ -26,20 +26,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 <b>Выберите режим:</b>
 
-🤖 <b>Быстрый режим</b> - классический генератор
-Просто, быстро, универсально
+🔥 <b>Умный генератор v3.0</b> - NEW!
+Глубокий анализ через GPT, человечный стиль без ИИ-штампов
 
-🎯 <b>Персонализированный режим</b> - NEW! 
+🎯 <b>Персонализированный режим</b>
 Анализирую вашу профессию и уровень, подбираю стиль письма
+
+⚡ <b>Классический режим</b>
+Просто, быстро, универсально
 
 Что выбираете?"""
     
     # Создаем кнопки выбора режима
-    keyboard = [
-        [InlineKeyboardButton("🤖 Быстрый режим", callback_data="mode_classic")],
-        [InlineKeyboardButton("🎯 Персонализированный", callback_data="mode_personalized")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    from utils.keyboards import get_main_menu
+    reply_markup = get_main_menu()
     
     await update.message.reply_text(
         welcome_message, 
@@ -51,4 +51,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     # Переходим к состоянию выбора режима
     from config import CHOOSING_MODE
-    return CHOOSING_MODE 
+    return CHOOSING_MODE
+
+
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показывает главное меню выбора режима
+    """
+    message = """🎯 <b>Выберите режим генерации:</b>
+
+🔥 <b>Умный генератор v3.0</b> - NEW!
+Глубокий анализ через GPT, человечный стиль без ИИ-штампов
+
+🎯 <b>Персонализированный режим</b>
+Анализирую вашу профессию и уровень, подбираю стиль письма
+
+⚡ <b>Классический режим</b>
+Просто, быстро, универсально"""
+    
+    from utils.keyboards import get_main_menu
+    reply_markup = get_main_menu()
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text=message,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+    elif update.message:
+        await update.message.reply_text(
+            text=message,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        ) 

@@ -236,7 +236,86 @@ class OpenAIService:
             return True
             
         logger.warning(f"Ответ не заканчивается корректно: '{response[-50:]}'")
-        return False
+        return False 
+
+    async def get_completion(
+        self, 
+        prompt: str, 
+        temperature: float = 0.7, 
+        max_tokens: int = 1500
+    ) -> Optional[str]:
+        """
+        Универсальный метод для получения ответа от GPT
+        
+        Args:
+            prompt: Промпт для GPT
+            temperature: Температура для генерации
+            max_tokens: Максимальное количество токенов
+            
+        Returns:
+            Ответ от GPT или None в случае ошибки
+        """
+        try:
+            logger.info(f"🤖 Отправляю запрос к GPT (temp={temperature}, max_tokens={max_tokens})")
+            
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                ),
+                timeout=OPENAI_TIMEOUT
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                content = response.choices[0].message.content
+                logger.info(f"✅ Получен ответ от GPT: {len(content)} символов")
+                return content
+            else:
+                logger.error("❌ GPT вернул пустой ответ")
+                return None
+                
+        except asyncio.TimeoutError:
+            logger.error("❌ Таймаут запроса к GPT")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Ошибка запроса к GPT: {e}")
+            
+            # Пробуем fallback модель
+            try:
+                logger.info(f"🔄 Пробую fallback модель {OPENAI_FALLBACK_MODEL}...")
+                response = await asyncio.wait_for(
+                    self.client.chat.completions.create(
+                        model=OPENAI_FALLBACK_MODEL,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=temperature
+                    ),
+                    timeout=OPENAI_TIMEOUT
+                )
+                
+                if response.choices and response.choices[0].message.content:
+                    content = response.choices[0].message.content
+                    logger.info(f"✅ Fallback модель ответила: {len(content)} символов")
+                    return content
+                else:
+                    logger.error("❌ Fallback модель вернула пустой ответ")
+                    return None
+                    
+            except Exception as fallback_e:
+                logger.error(f"❌ Fallback модель тоже не работает: {fallback_e}")
+                return None
 
     async def generate_personalized_letter(self, prompt: str, temperature: Optional[float] = None) -> Optional[str]:
         """

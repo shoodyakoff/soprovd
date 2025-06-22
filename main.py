@@ -37,6 +37,7 @@ from handlers.personalized_conversation import (
     WAITING_RESUME as PERS_WAITING_RESUME,
     WAITING_STYLE_CONFIRMATION as PERS_WAITING_STYLE
 )
+from handlers.v3_conversation import get_v3_conversation_handler
 
 # Настройка логирования
 logging.basicConfig(
@@ -86,7 +87,7 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             CHOOSING_MODE: [
-                CallbackQueryHandler(handle_mode_choice, pattern="^mode_")
+                CallbackQueryHandler(handle_mode_choice, pattern="^mode_(classic|personalized|v3)$")
             ],
             WAITING_JOB_DESCRIPTION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_job_description)
@@ -114,12 +115,17 @@ def main():
             CommandHandler("start", start)  # Позволяем начать заново в любой момент
         ],
         allow_reentry=True,  # Позволяем начать заново
-        per_message=False,   # Исправляем предупреждение
+        per_message=False,   # False для работы с MessageHandler
         per_chat=True,       # Один разговор на чат
         per_user=True        # Один разговор на пользователя
     )
     
-    # Добавляем обработчик
+    # Добавляем v3.0 conversation handler ПЕРВЫМ (приоритет)
+    v3_handler = get_v3_conversation_handler()
+    application.add_handler(v3_handler)
+    logger.info("🚀 v3.0 ConversationHandler добавлен!")
+    
+    # Добавляем основной conversation handler
     application.add_handler(conversation_handler)
     logger.info(f"🔥 ConversationHandler добавлен! States: {list(conversation_handler.states.keys())}")
     
