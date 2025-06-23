@@ -6,7 +6,6 @@ Simple Conversation Handler v4.0
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
-from services.smart_analyzer import analyze_and_generate
 
 logger = logging.getLogger(__name__)
 
