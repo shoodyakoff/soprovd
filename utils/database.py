@@ -13,8 +13,22 @@ class SupabaseClient:
         """Получить клиент Supabase (синглтон)"""
         if cls._instance is None:
             try:
-                # Импортируем переменные из config.py, где они правильно загружаются
-                from config import SUPABASE_URL, SUPABASE_KEY
+                # DEBUG: Прямо здесь проверим переменные
+                print(f"🔍 DATABASE DEBUG: os.getenv('SUPABASE_URL') = {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
+                print(f"🔍 DATABASE DEBUG: os.getenv('SUPABASE_KEY') = {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
+                
+                # В production на Railway используем прямое чтение
+                if os.getenv('ENVIRONMENT') == 'production':
+                    SUPABASE_URL = os.getenv('SUPABASE_URL')
+                    SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+                    print("🔧 Using direct os.getenv() for production")
+                else:
+                    # Импортируем переменные из config.py для локальной разработки
+                    from config import SUPABASE_URL, SUPABASE_KEY
+                    print("🔧 Using config.py imports for development")
+                
+                print(f"🔍 DATABASE DEBUG: FINAL SUPABASE_URL = {SUPABASE_URL}")
+                print(f"🔍 DATABASE DEBUG: FINAL SUPABASE_KEY = {SUPABASE_KEY[:20] if SUPABASE_KEY else 'NONE'}...")
                 
                 if not SUPABASE_URL or not SUPABASE_KEY:
                     logger.warning("Supabase credentials not found in config")

@@ -3,6 +3,7 @@
 НОВАЯ ЛОГИКА: единый анализ через smart_analyzer_v6
 """
 import logging
+import os
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -11,6 +12,11 @@ from telegram.ext import (
     ConversationHandler,
     filters
 )
+
+# DEBUG: Проверим переменные окружения ДО импорта config
+print(f"🔍 RAILWAY DEBUG: SUPABASE_URL = {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
+print(f"🔍 RAILWAY DEBUG: SUPABASE_KEY = {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
+print(f"🔍 RAILWAY DEBUG: ENVIRONMENT = {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
 
 from config import TELEGRAM_BOT_TOKEN
 
