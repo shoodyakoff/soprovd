@@ -31,11 +31,23 @@ class SupabaseClient:
                 print(f"🔍 DATABASE DEBUG: os.getenv('SUPABASE_URL') = {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
                 print(f"🔍 DATABASE DEBUG: os.getenv('SUPABASE_KEY') = {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
                 
-                # ВРЕМЕННЫЙ ХАРДКОД ДЛЯ RAILWAY ТЕСТИРОВАНИЯ
-                print("🚨 HARDCODED SUPABASE CREDENTIALS FOR TESTING")
-                SUPABASE_URL = "https://ifonauhikhtzweifooql.supabase.co"
-                SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlmb25hdWhpa2h0endlaWZvb3FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQyOTc3NzIsImV4cCI6MjA0OTg3Mzc3Mn0.8u4xRZgXQVPd2sJdWGKvOSKhxs4dTJQKVJCuJO8vPF4"
-                print("🔧 Using HARDCODED credentials for Railway testing")
+                # ДИАГНОСТИКА: Сравним что в Railway Variables vs что читает код
+                railway_supabase_url = os.getenv('SUPABASE_URL')
+                railway_supabase_key = os.getenv('SUPABASE_KEY')
+                
+                print("🔍 RAILWAY VARIABLES DIAGNOSTIC:")
+                print(f"   Expected SUPABASE_URL: https://myplcywicwftiszceaci.supabase.co")
+                print(f"   Actual   SUPABASE_URL: {railway_supabase_url}")
+                print(f"   Expected SUPABASE_KEY: eyJhbGciOiJIUzI1NiIs... (starts with eyJhbGciOiJIUzI1NiIs)")
+                print(f"   Actual   SUPABASE_KEY: {railway_supabase_key[:20] if railway_supabase_key else 'NONE'}...")
+                
+                if railway_supabase_url and railway_supabase_key:
+                    print("✅ Railway variables found - using them")
+                    SUPABASE_URL = railway_supabase_url
+                    SUPABASE_KEY = railway_supabase_key
+                else:
+                    print("❌ Railway variables NOT found - this is the problem!")
+                    return None
                 
                 print(f"🔍 DATABASE DEBUG: FINAL SUPABASE_URL = {SUPABASE_URL}")
                 print(f"🔍 DATABASE DEBUG: FINAL SUPABASE_KEY = {SUPABASE_KEY[:20] if SUPABASE_KEY else 'NONE'}...")

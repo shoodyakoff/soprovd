@@ -72,6 +72,18 @@ def main():
     """
     Основная функция запуска бота v6.0 - НОВАЯ ЛОГИКА для Стаса!
     """
+    # ДИАГНОСТИКА: Сравним что в Railway Variables vs что читает код
+    print("🔍 TELEGRAM TOKEN DIAGNOSTIC:")
+    print(f"   Expected: 7647818988:AAFgh0...")
+    print(f"   From config.py: {TELEGRAM_BOT_TOKEN}")
+    print(f"   From os.getenv: {os.getenv('TELEGRAM_BOT_TOKEN')}")
+    
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_TOKEN.startswith('7647818988'):
+        print("✅ Correct token found")
+    else:
+        print("❌ WRONG TOKEN! Railway variables not working!")
+        print("🚨 This explains why old bot instance is running")
+    
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN не найден в переменных окружения!")
         return
