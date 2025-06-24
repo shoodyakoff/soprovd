@@ -1,13 +1,13 @@
 """
 Главный файл Telegram-бота Сопровод v6.0
 НОВАЯ ЛОГИКА: единый анализ через smart_analyzer_v6
-FORCED UPDATE: 2025-06-24 08:01:00 UTC - COMMIT fdccee3
+FORCED UPDATE: 2025-06-24 08:08:00 UTC - COMMIT 697ea19 - WEBHOOK FIX
 """
 
 # ПРИНУДИТЕЛЬНЫЙ ВЫВОД САМЫЙ ПЕРВЫЙ - COMMIT fdccee3
 print("=" * 60)
-print("🚨🚨🚨 MAIN.PY STARTING - COMMIT fdccee3 🚨🚨🚨")
-print("🚨🚨🚨 NEW CODE MUST BE RUNNING NOW! 🚨🚨🚨")
+print("🚨🚨🚨 MAIN.PY STARTING - COMMIT 697ea19 🚨🚨🚨")
+print("🚨🚨🚨 WEBHOOK FIXED - NEW CODE RUNNING! 🚨🚨🚨")
 print("=" * 60)
 
 import logging
