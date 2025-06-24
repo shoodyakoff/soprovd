@@ -124,7 +124,7 @@ class AnalyticsService:
         if generated_letter:
             updates['generated_letter'] = generated_letter
         if generation_time:
-            updates['generation_time_sec'] = generation_time
+            updates['generation_time_seconds'] = generation_time
             
         return await self.update_letter_session(session_id, updates)
     
@@ -201,7 +201,7 @@ class AnalyticsService:
             session_id=session_id,
             event_data={
                 'letter_length': letter_length,
-                'generation_time_sec': generation_time
+                'generation_time_seconds': generation_time
             }
         )
         return await self.track_event(event)

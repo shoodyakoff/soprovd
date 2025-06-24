@@ -27,7 +27,7 @@ class LetterSessionData:
     selected_style: Optional[str] = None  # professional, casual, bold
     generated_letter: Optional[str] = None
     generated_letter_length: Optional[int] = None
-    generation_time_sec: Optional[int] = None
+    generation_time_seconds: Optional[int] = None
     openai_model_used: Optional[str] = None
     user_regenerated: bool = False
     
