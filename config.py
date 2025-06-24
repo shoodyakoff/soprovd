@@ -14,13 +14,18 @@ print(f"🔧 Raw ENVIRONMENT from os.getenv: {os.getenv('ENVIRONMENT', 'NOT_FOUN
 # Загружаем переменные окружения
 # Автоматически определяем окружение
 environment = os.getenv('ENVIRONMENT', 'development')
+print(f"🔧 Detected environment: {environment}")
+
 if environment == 'development':
+    print("🔧 Loading .env.dev for development")
     load_dotenv('.env.dev')  # Для разработки
 elif environment == 'production':
+    print("🔧 Using Railway environment variables for production")
     # В продакшене Railway сам загружает переменные окружения
     pass  # Ничего не делаем, переменные уже доступны
 else:
-    load_dotenv('.env')      # Fallback
+    print(f"🔧 Unknown environment '{environment}', using development mode")
+    load_dotenv('.env.dev')  # Безопасный fallback на dev
 
 # Токены и ключи API
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')

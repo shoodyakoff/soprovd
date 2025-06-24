@@ -2,11 +2,14 @@
 venv/
 .venv/
 
-# Файлы окружения
+# Файлы окружения - НЕ копировать в Docker!
+.env*
 .env
 .env.local
 .env.dev
 .env.prod
+.env.production
+env
 
 # Логи
 *.log
