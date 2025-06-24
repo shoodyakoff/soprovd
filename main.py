@@ -1,6 +1,7 @@
 """
 Главный файл Telegram-бота Сопровод v6.0
 НОВАЯ ЛОГИКА: единый анализ через smart_analyzer_v6
+FORCED UPDATE: 2025-06-24 07:35:00 UTC
 """
 import logging
 import os
