@@ -4,8 +4,10 @@ FROM python:3.11-slim
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Force rebuild with timestamp
-RUN echo "Build timestamp: $(date)" > /tmp/build_info
+# Force complete rebuild - COMMIT fdccee3
+RUN echo "COMMIT: fdccee3 $(date)" > /tmp/build_info && \
+    rm -rf /tmp/* || true && \
+    echo "Cleared cache"
 
 # Копируем файл зависимостей
 COPY requirements.txt .
