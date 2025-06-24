@@ -17,14 +17,16 @@ logger = logging.getLogger(__name__)
 
 class SupabaseClient:
     _instance: Optional[object] = None
+    _failed_init = False  # Флаг для избежания повторных попыток
     
     @classmethod
     def get_client(cls) -> Optional[object]:
         """Получить клиент Supabase (синглтон)"""
-        if cls._instance is None:
+        if cls._instance is None and not cls._failed_init:
             try:
                 if not SUPABASE_AVAILABLE or create_client is None:
                     logger.warning("Supabase library not available")
+                    cls._failed_init = True
                     return None
                 
                 # Импортируем переменные из config.py
@@ -35,6 +37,7 @@ class SupabaseClient:
                 
                 if not SUPABASE_URL or not SUPABASE_KEY:
                     logger.warning("Supabase credentials not found in config")
+                    cls._failed_init = True
                     return None
                 
                 # Создаем клиент с минимальными параметрами, избегая проблем с версиями
@@ -49,6 +52,8 @@ class SupabaseClient:
                 # Добавляем более детальную информацию об ошибке
                 import traceback
                 logger.error(f"Full traceback: {traceback.format_exc()}")
+                cls._failed_init = True
+                print("⚠️  Бот будет работать без аналитики Supabase")
                 return None
                 
         return cls._instance
