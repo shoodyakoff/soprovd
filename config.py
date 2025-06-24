@@ -57,7 +57,12 @@ ANALYTICS_ENABLED = os.getenv('ANALYTICS_ENABLED', 'true').lower() == 'true'
 # Проверка аналитики при запуске
 if ANALYTICS_ENABLED and (not SUPABASE_URL or not SUPABASE_KEY):
     print("⚠️  Warning: Analytics enabled but Supabase credentials missing")
+    print(f"SUPABASE_URL exists: {bool(SUPABASE_URL)}")
+    print(f"SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
+    print(f"Environment: {environment}")
     ANALYTICS_ENABLED = False
+else:
+    print(f"✅ Analytics configured: URL={SUPABASE_URL[:30] if SUPABASE_URL else 'None'}... KEY={SUPABASE_KEY[:20] if SUPABASE_KEY else 'None'}...")
 
 # === НАСТРОЙКИ АЛГОРИТМА АНАЛИЗА v6.0 ===
 USE_UNIFIED_ANALYSIS = os.getenv('USE_UNIFIED_ANALYSIS', 'true').lower() == 'true'
