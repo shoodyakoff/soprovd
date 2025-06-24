@@ -5,6 +5,12 @@
 import os
 from dotenv import load_dotenv
 
+# DEBUG: Принудительная отладка config.py
+print("🔧 CONFIG.PY LOADING START")
+print(f"🔧 Raw SUPABASE_URL from os.getenv: {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
+print(f"🔧 Raw SUPABASE_KEY from os.getenv: {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
+print(f"🔧 Raw ENVIRONMENT from os.getenv: {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
+
 # Загружаем переменные окружения
 # Автоматически определяем окружение
 environment = os.getenv('ENVIRONMENT', 'development')

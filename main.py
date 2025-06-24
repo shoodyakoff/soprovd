@@ -14,9 +14,16 @@ from telegram.ext import (
 )
 
 # DEBUG: Проверим переменные окружения ДО импорта config
+print("=" * 50)
+print("🚨 RAILWAY FORCED DEBUG START 🚨")
+print("=" * 50)
 print(f"🔍 RAILWAY DEBUG: SUPABASE_URL = {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
 print(f"🔍 RAILWAY DEBUG: SUPABASE_KEY = {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
 print(f"🔍 RAILWAY DEBUG: ENVIRONMENT = {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
+print(f"🔍 RAILWAY DEBUG: TELEGRAM_BOT_TOKEN = {os.getenv('TELEGRAM_BOT_TOKEN', 'NOT_FOUND')[:20]}...")
+print("=" * 50)
+print("🚨 RAILWAY FORCED DEBUG END 🚨")
+print("=" * 50)
 
 from config import TELEGRAM_BOT_TOKEN
 

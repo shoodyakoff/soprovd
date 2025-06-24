@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
+# Force rebuild with timestamp
+RUN echo "Build timestamp: $(date)" > /tmp/build_info
+
 # Копируем файл зависимостей
 COPY requirements.txt .
 
