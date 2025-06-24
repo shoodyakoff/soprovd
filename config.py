@@ -10,6 +10,7 @@ print("🔧 CONFIG.PY LOADING START")
 print(f"🔧 Raw SUPABASE_URL from os.getenv: {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
 print(f"🔧 Raw SUPABASE_KEY from os.getenv: {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
 print(f"🔧 Raw ENVIRONMENT from os.getenv: {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
+print(f"🔧 Raw ANALYTICS_ENABLED from os.getenv: {os.getenv('ANALYTICS_ENABLED', 'NOT_FOUND')}")
 
 # Загружаем переменные окружения
 # Автоматически определяем окружение
@@ -65,15 +66,24 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
 ANALYTICS_ENABLED = os.getenv('ANALYTICS_ENABLED', 'true').lower() == 'true'
 
+print("🔧 RAILWAY ANALYTICS DEBUG:")
+print(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'NOT_FOUND'}...")
+print(f"   SUPABASE_KEY: {SUPABASE_KEY[:30] if SUPABASE_KEY else 'NOT_FOUND'}...")
+print(f"   ANALYTICS_ENABLED: {ANALYTICS_ENABLED}")
+print(f"   Environment: {environment}")
+
 # Проверка аналитики при запуске
 if ANALYTICS_ENABLED and (not SUPABASE_URL or not SUPABASE_KEY):
     print("⚠️  Warning: Analytics enabled but Supabase credentials missing")
     print(f"SUPABASE_URL exists: {bool(SUPABASE_URL)}")
     print(f"SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
     print(f"Environment: {environment}")
+    print("🚨 RAILWAY: Check your environment variables in Railway dashboard!")
     ANALYTICS_ENABLED = False
-else:
+elif ANALYTICS_ENABLED:
     print(f"✅ Analytics configured: URL={SUPABASE_URL[:30] if SUPABASE_URL else 'None'}... KEY={SUPABASE_KEY[:20] if SUPABASE_KEY else 'None'}...")
+else:
+    print("⚠️ Analytics disabled by ANALYTICS_ENABLED=false")
 
 # === НАСТРОЙКИ АЛГОРИТМА АНАЛИЗА v6.0 ===
 USE_UNIFIED_ANALYSIS = os.getenv('USE_UNIFIED_ANALYSIS', 'true').lower() == 'true'
