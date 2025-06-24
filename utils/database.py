@@ -37,11 +37,18 @@ class SupabaseClient:
                     logger.warning("Supabase credentials not found in config")
                     return None
                 
-                cls._instance = create_client(SUPABASE_URL, SUPABASE_KEY)
+                # Создаем клиент с минимальными параметрами, избегая проблем с версиями
+                cls._instance = create_client(
+                    supabase_url=SUPABASE_URL,
+                    supabase_key=SUPABASE_KEY
+                )
                 logger.info("✅ Supabase client initialized successfully")
                 
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Supabase client: {e}")
+                # Добавляем более детальную информацию об ошибке
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
                 return None
                 
         return cls._instance
