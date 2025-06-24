@@ -3,8 +3,10 @@
 """
 import asyncio
 import logging
+import time
 from typing import Optional
 from openai import AsyncOpenAI
+from .ai_service import AIService
 from config import (
     OPENAI_API_KEY, 
     OPENAI_MODEL, 
@@ -17,16 +19,21 @@ from config import (
     OPENAI_PRESENCE_PENALTY,
     OPENAI_FREQUENCY_PENALTY
 )
-from utils.prompts import get_cover_letter_prompt
+# Старый импорт удален - используется smart_analyzer_v6.py с встроенными промптами
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
-class OpenAIService:
+class OpenAIService(AIService):
     """Сервис для работы с OpenAI API"""
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        self._stats_callback = None
+    
+    def set_stats_callback(self, callback):
+        """Установить callback для сбора статистики"""
+        self._stats_callback = callback
     
     async def test_api_connection(self) -> bool:
         """
@@ -95,56 +102,6 @@ class OpenAIService:
                 logger.error(f"❌ Fallback модель тоже не работает: {fallback_e}")
                 return False
 
-    async def generate_cover_letter(
-        self, 
-        job_description: str, 
-        resume: str, 
-        style: str
-    ) -> Optional[str]:
-        """
-        Генерирует сопроводительное письмо с использованием OpenAI API
-        
-        Args:
-            job_description: Описание вакансии
-            resume: Резюме кандидата
-            style: Стиль письма (neutral, bold, formal)
-            
-        Returns:
-            Сгенерированное письмо или None в случае ошибки
-        """
-        
-        prompt = get_cover_letter_prompt(job_description, resume, style)
-        
-        # Пробуем сгенерировать письмо с несколькими попытками
-        for attempt in range(MAX_GENERATION_ATTEMPTS):
-            try:
-                logger.info(f"Попытка генерации #{attempt + 1} (temp={OPENAI_TEMPERATURE}, top_p={OPENAI_TOP_P}, presence={OPENAI_PRESENCE_PENALTY}, frequency={OPENAI_FREQUENCY_PENALTY})")
-                
-                response = await asyncio.wait_for(
-                    self._make_openai_request(prompt),
-                    timeout=OPENAI_TIMEOUT
-                )
-                
-                if response and self._is_response_complete(response):
-                    logger.info("Успешно сгенерировано письмо")
-                    return response
-                else:
-                    # Логируем детали для отладки
-                    response_length = len(response) if response else 0
-                    response_preview = response[:200] if response else "None"
-                    logger.warning(f"Неполный ответ на попытке #{attempt + 1}. Длина: {response_length}, Превью: {response_preview}")
-                    if response:
-                        ends_properly = response.strip().endswith(('.', '!', '?'))
-                        logger.warning(f"Заканчивается правильно: {ends_properly}, Последние 50 символов: '{response[-50:]}'")
-                    
-            except asyncio.TimeoutError:
-                logger.error(f"Таймаут на попытке #{attempt + 1}")
-            except Exception as e:
-                logger.error(f"Ошибка на попытке #{attempt + 1}: {e}")
-        
-        logger.error("Все попытки генерации неуспешны")
-        return None
-    
     async def _make_openai_request(self, prompt: str) -> Optional[str]:
         """
         Выполняет запрос к OpenAI API
@@ -242,7 +199,10 @@ class OpenAIService:
         self, 
         prompt: str, 
         temperature: float = 0.7, 
-        max_tokens: int = 1500
+        max_tokens: int = 1500,
+        user_id: Optional[int] = None,
+        session_id: Optional[str] = None,
+        request_type: str = "completion"
     ) -> Optional[str]:
         """
         Универсальный метод для получения ответа от GPT
@@ -251,10 +211,16 @@ class OpenAIService:
             prompt: Промпт для GPT
             temperature: Температура для генерации
             max_tokens: Максимальное количество токенов
+            user_id: ID пользователя для аналитики
+            session_id: ID сессии для аналитики
+            request_type: Тип запроса для аналитики
             
         Returns:
             Ответ от GPT или None в случае ошибки
         """
+        start_time = time.time()
+        used_model = OPENAI_MODEL
+        
         try:
             logger.info(f"🤖 Отправляю запрос к GPT (temp={temperature}, max_tokens={max_tokens}, timeout={OPENAI_TIMEOUT}s)")
             logger.info(f"📝 Длина промпта: {len(prompt)} символов")
@@ -274,19 +240,87 @@ class OpenAIService:
                 timeout=OPENAI_TIMEOUT
             )
             
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
             if response.choices and response.choices[0].message.content:
                 content = response.choices[0].message.content
                 logger.info(f"✅ Получен ответ от GPT: {len(content)} символов")
+                
+                # 📊 АНАЛИТИКА: Логируем успешный запрос
+                await self._log_openai_request(
+                    model=used_model,
+                    request_type=request_type,
+                    prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
+                    completion_tokens=response.usage.completion_tokens if response.usage else 0,
+                    total_tokens=response.usage.total_tokens if response.usage else 0,
+                    response_time_ms=response_time_ms,
+                    success=True,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                
+                # Сохраняем статистику для анализатора (если есть callback)
+                if hasattr(self, '_stats_callback') and self._stats_callback:
+                    self._stats_callback(
+                        model=used_model,
+                        tokens=response.usage.total_tokens if response.usage else 0
+                    )
+                
                 return content
             else:
                 logger.error("❌ GPT вернул пустой ответ")
+                # 📊 АНАЛИТИКА: Логируем пустой ответ
+                await self._log_openai_request(
+                    model=used_model,
+                    request_type=request_type,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    response_time_ms=response_time_ms,
+                    success=False,
+                    user_id=user_id,
+                    session_id=session_id,
+                    error_message="Empty response"
+                )
                 return None
                 
         except asyncio.TimeoutError:
             logger.error("❌ Таймаут запроса к GPT")
+            # 📊 АНАЛИТИКА: Логируем таймаут
+            await self._log_openai_request(
+                model=used_model,
+                request_type=request_type,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                response_time_ms=response_time_ms,
+                success=False,
+                user_id=user_id,
+                session_id=session_id,
+                error_message="Timeout"
+            )
             return None
         except Exception as e:
             logger.error(f"❌ Ошибка запроса к GPT: {e}")
+            
+            # 📊 АНАЛИТИКА: Логируем ошибку в базу данных
+            try:
+                import traceback
+                from models.analytics_models import ErrorData
+                from services.analytics_service import AnalyticsService
+                
+                error_data = ErrorData(
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    user_id=user_id,
+                    session_id=session_id,
+                    stack_trace=traceback.format_exc(),
+                    handler_name='openai_get_completion'
+                )
+                analytics = AnalyticsService()
+                await analytics.log_error(error_data)
+            except Exception as log_error:
+                logger.error(f"Failed to log OpenAI error to database: {log_error}")
             
             # Пробуем fallback модель
             try:
@@ -411,6 +445,46 @@ class OpenAIService:
             except Exception as fallback_e:
                 logger.error(f"Ошибка с fallback моделью {OPENAI_FALLBACK_MODEL}: {fallback_e}")
                 return None
+
+    async def _log_openai_request(
+        self,
+        model: str,
+        request_type: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        response_time_ms: int,
+        success: bool,
+        user_id: Optional[int] = None,
+        session_id: Optional[str] = None,
+        error_message: Optional[str] = None
+    ) -> None:
+        """
+        Логирует запрос к OpenAI в базу данных
+        """
+        try:
+            # Импортируем здесь чтобы избежать циклических импортов
+            from services.analytics_service import AnalyticsService
+            from models.analytics_models import OpenAIRequestData
+            
+            request_data = OpenAIRequestData(
+                model=model,
+                request_type=request_type,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                response_time_ms=response_time_ms,
+                success=success,
+                user_id=user_id,
+                session_id=session_id,
+                error_message=error_message
+            )
+            
+            analytics = AnalyticsService()
+            await analytics.log_openai_request(request_data)
+        except Exception as e:
+            # Логируем ошибку, но не прерываем основной процесс
+            logger.error(f"Ошибка при логировании OpenAI запроса: {e}")
 
 
 # Глобальный экземпляр сервиса для быстрого доступа  

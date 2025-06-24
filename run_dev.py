@@ -28,7 +28,15 @@ if __name__ == "__main__":
     load_env_file('.env.dev')
     
     # Проверяем обязательные переменные
-    required_vars = ['TELEGRAM_BOT_TOKEN', 'OPENAI_API_KEY']
+    required_vars = ['TELEGRAM_BOT_TOKEN']
+    ai_provider = os.getenv('AI_PROVIDER', 'openai').lower()
+    
+    # Добавляем проверку ключа в зависимости от провайдера
+    if ai_provider == 'claude':
+        required_vars.append('ANTHROPIC_API_KEY')
+    else:
+        required_vars.append('OPENAI_API_KEY')
+    
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
@@ -37,8 +45,17 @@ if __name__ == "__main__":
         sys.exit(1)
     
     print("✅ Переменные окружения загружены из .env.dev")
-    print(f"🤖 Бот токен: {os.getenv('TELEGRAM_BOT_TOKEN')[:20]}...")
-    print(f"🔑 OpenAI ключ: {os.getenv('OPENAI_API_KEY')[:20]}...")
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    print(f"🤖 Бот токен: {bot_token[:20] if bot_token else 'НЕ НАЙДЕН'}...")
+    print(f"🤖 AI Провайдер: {ai_provider.upper()}")
+    
+    if ai_provider == 'claude':
+        claude_key = os.getenv('ANTHROPIC_API_KEY', '')
+        print(f"🔑 Claude ключ: {claude_key[:20] if claude_key else 'НЕ НАЙДЕН'}...")
+    else:
+        openai_key = os.getenv('OPENAI_API_KEY', '')
+        print(f"🔑 OpenAI ключ: {openai_key[:20] if openai_key else 'НЕ НАЙДЕН'}...")
+    print("🚀 Запускаю НОВУЮ ЛОГИКУ v6.0 для Стаса!")
     
     # Запускаем основной файл
     from main import main

@@ -1,6 +1,6 @@
 """
-Главный файл Telegram-бота Сопровод v4.0
-Простой поток: вакансия → резюме → письмо
+Главный файл Telegram-бота Сопровод v6.0
+НОВАЯ ЛОГИКА: единый анализ через smart_analyzer_v6
 """
 import logging
 from telegram.ext import (
@@ -14,7 +14,7 @@ from telegram.ext import (
 
 from config import TELEGRAM_BOT_TOKEN
 
-from handlers.simple_conversation import get_simple_conversation_handler
+from handlers.simple_conversation_v6 import get_conversation_handler, get_command_handlers
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,17 +27,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-async def check_openai_api():
+async def check_ai_api():
     """
-    Проверяет работу OpenAI API при запуске
+    Проверяет работу AI API при запуске (OpenAI или Claude)
     """
-    from services.openai_service import OpenAIService
-    openai_service = OpenAIService()
+    from services.ai_factory import get_ai_service, AIFactory
     
-    is_working = await openai_service.test_api_connection()
+    ai_service = get_ai_service()
+    provider_name = AIFactory.get_provider_name()
+    
+    is_working = await ai_service.test_api_connection()
     if not is_working:
-        logger.error("❌ OpenAI API не работает! Проверьте API ключ и интернет соединение.")
+        logger.error(f"❌ {provider_name} API не работает! Проверьте API ключ и интернет соединение.")
         logger.error("Бот будет запущен, но генерация писем может не работать.")
+    else:
+        logger.info(f"✅ {provider_name} API работает нормально")
     
     return is_working
 
@@ -45,12 +49,14 @@ async def post_init(application):
     """
     Функция, вызываемая после инициализации приложения
     """
-    logger.info("Проверяю OpenAI API...")
-    await check_openai_api()
+    from services.ai_factory import AIFactory
+    provider_name = AIFactory.get_provider_name()
+    logger.info(f"Проверяю {provider_name} API...")
+    await check_ai_api()
 
 def main():
     """
-    Основная функция запуска бота v4.0 - только простой поток
+    Основная функция запуска бота v6.0 - НОВАЯ ЛОГИКА для Стаса!
     """
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN не найден в переменных окружения!")
@@ -59,25 +65,20 @@ def main():
     # Создаем приложение
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     
-    # Добавляем ТОЛЬКО v4.0 simple handler - единственный режим
-    simple_handler = get_simple_conversation_handler()
-    application.add_handler(simple_handler)
-    logger.info("🎯 v4.0 Simple ConversationHandler добавлен - единственный режим!")
+    # Добавляем НОВЫЙ v6.0 handler - только актуальная логика!
+    v6_handler = get_conversation_handler()
+    application.add_handler(v6_handler)
+    logger.info("🚀 Стас, v6.0 ConversationHandler добавлен - НОВАЯ ЛОГИКА!")
     
-    # Обработчик команды help
-    async def help_handler(update, context):
-        await update.message.reply_text(
-            "📋 <b>Сопровод v4.0 - Умный генератор писем</b>\n\n"
-            "🚀 /start - создать сопроводительное письмо\n"
-            "❓ /help - показать эту справку\n\n"
-            "💡 Просто отправьте /start и следуйте инструкциям:\n"
-            "1️⃣ Вакансия → 2️⃣ Резюме → 3️⃣ Готово!",
-            parse_mode='HTML'
-        )
+    # Добавляем команды help, about, support
+    command_handlers = get_command_handlers()
+    for handler in command_handlers:
+        application.add_handler(handler)
+    logger.info("✅ Команды help, about, support зарегистрированы!")
     
-    application.add_handler(CommandHandler("help", help_handler))
+    # Старый help handler удален - используем новый из handlers
     
-    logger.info("🚀 Бот Сопровод v4.0 запущен! Простой поток: вакансия → резюме → письмо")
+    logger.info("🚀 Стас, бот Сопровод v6.0 запущен! НОВАЯ ЛОГИКА: smart_analyzer_v6 + UNIFIED_ANALYSIS_PROMPT!")
     
     # Запускаем бота
     application.run_polling(allowed_updates=["message", "callback_query"])
