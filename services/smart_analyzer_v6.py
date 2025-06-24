@@ -175,7 +175,7 @@ B2B в HotelTech — это баланс между функциональнос
         try:
             import traceback
             from models.analytics_models import ErrorData
-            from services.analytics_service import AnalyticsService
+            from services.analytics_service import analytics  # Используем глобальный экземпляр
             
             error_data = ErrorData(
                 error_type=type(e).__name__,
@@ -185,7 +185,6 @@ B2B в HotelTech — это баланс между функциональнос
                 stack_trace=traceback.format_exc(),
                 handler_name='generate_simple_letter'
             )
-            analytics = AnalyticsService()
             await analytics.log_error(error_data)
         except Exception as log_error:
             logger.error(f"Failed to log error to database: {log_error}")

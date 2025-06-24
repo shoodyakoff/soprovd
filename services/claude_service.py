@@ -235,7 +235,7 @@ class ClaudeService(AIService):
             try:
                 import traceback
                 from models.analytics_models import ErrorData
-                from services.analytics_service import AnalyticsService
+                from services.analytics_service import analytics  # Используем глобальный экземпляр
                 
                 error_data = ErrorData(
                     error_type=type(e).__name__,
@@ -245,7 +245,6 @@ class ClaudeService(AIService):
                     stack_trace=traceback.format_exc(),
                     handler_name='claude_get_completion'
                 )
-                analytics = AnalyticsService()
                 await analytics.log_error(error_data)
             except Exception as log_error:
                 logger.error(f"Failed to log Claude error to database: {log_error}")
@@ -431,7 +430,7 @@ class ClaudeService(AIService):
         """
         try:
             # Импортируем здесь чтобы избежать циклических импортов
-            from services.analytics_service import AnalyticsService
+            from services.analytics_service import analytics  # Используем глобальный экземпляр
             from models.analytics_models import OpenAIRequestData  # Используем ту же модель
             
             # Адаптируем под формат Claude
@@ -448,7 +447,6 @@ class ClaudeService(AIService):
                 error_message=error_message
             )
             
-            analytics = AnalyticsService()
             await analytics.log_openai_request(request_data)  # Используем тот же метод
         except Exception as e:
             # Логируем ошибку, но не прерываем основной процесс

@@ -202,18 +202,40 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Создаем сессию аналитики
         user_id = context.user_data.get('analytics_user_id')
+        logger.info(f"🔍 RAILWAY DEBUG: handle_vacancy analytics_user_id: {user_id}")
+        
         if user_id:
-            session_data = LetterSessionData(
-                user_id=user_id,
-                mode="v6.0",
-                job_description=vacancy_text[:1000],  # Первые 1000 символов
-                job_description_length=len(vacancy_text),
-                selected_style="professional"
-            )
-            session_id = await analytics.create_letter_session(session_data)
-            if session_id:
-                context.user_data['analytics_session_id'] = session_id
-                await analytics.track_vacancy_sent(user_id, session_id, len(vacancy_text))
+            logger.info(f"🔍 RAILWAY DEBUG: Creating LetterSessionData for user {user_id}")
+            
+            try:
+                session_data = LetterSessionData(
+                    user_id=user_id,
+                    mode="v6.0",
+                    job_description=vacancy_text[:1000],  # Первые 1000 символов
+                    job_description_length=len(vacancy_text),
+                    selected_style="professional"
+                )
+                logger.info(f"🔍 RAILWAY DEBUG: LetterSessionData created successfully")
+                
+                session_id = await analytics.create_letter_session(session_data)
+                logger.info(f"🔍 RAILWAY DEBUG: create_letter_session returned: {session_id}")
+                
+                if session_id:
+                    context.user_data['analytics_session_id'] = session_id
+                    logger.info(f"🔍 RAILWAY DEBUG: Calling track_vacancy_sent...")
+                    await analytics.track_vacancy_sent(user_id, session_id, len(vacancy_text))
+                    logger.info(f"🔍 RAILWAY DEBUG: track_vacancy_sent completed")
+                else:
+                    logger.error(f"❌ RAILWAY DEBUG: create_letter_session returned None!")
+                    
+            except Exception as e:
+                logger.error(f"❌ RAILWAY DEBUG: Exception in vacancy analytics: {e}")
+                import traceback
+                logger.error(f"❌ RAILWAY DEBUG: Traceback: {traceback.format_exc()}")
+        else:
+            logger.error(f"❌ RAILWAY DEBUG: No analytics_user_id found!")
+    else:
+        logger.error(f"❌ RAILWAY DEBUG: context.user_data is None!")
     
     await update.message.reply_text(
         "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
@@ -285,8 +307,19 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             user_id = context.user_data.get('analytics_user_id')
             session_id = context.user_data.get('analytics_session_id')
             
+            logger.info(f"🔍 RAILWAY DEBUG: handle_resume user_id: {user_id}, session_id: {session_id}")
+            
             if user_id and session_id:
-                await analytics.track_resume_sent(user_id, session_id, len(resume_text))
+                try:
+                    logger.info(f"🔍 RAILWAY DEBUG: Calling track_resume_sent...")
+                    await analytics.track_resume_sent(user_id, session_id, len(resume_text))
+                    logger.info(f"🔍 RAILWAY DEBUG: track_resume_sent completed")
+                except Exception as e:
+                    logger.error(f"❌ RAILWAY DEBUG: Exception in track_resume_sent: {e}")
+            else:
+                logger.error(f"❌ RAILWAY DEBUG: Missing user_id or session_id!")
+        else:
+            logger.error(f"❌ RAILWAY DEBUG: context.user_data is None in handle_resume!")
         
         # 🎯 ПРОСТАЯ ГЕНЕРАЦИЯ v6.1: Только письмо, без сложностей
         start_time = time.time()

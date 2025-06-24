@@ -307,7 +307,7 @@ class OpenAIService(AIService):
             try:
                 import traceback
                 from models.analytics_models import ErrorData
-                from services.analytics_service import AnalyticsService
+                from services.analytics_service import analytics  # Используем глобальный экземпляр
                 
                 error_data = ErrorData(
                     error_type=type(e).__name__,
@@ -317,7 +317,6 @@ class OpenAIService(AIService):
                     stack_trace=traceback.format_exc(),
                     handler_name='openai_get_completion'
                 )
-                analytics = AnalyticsService()
                 await analytics.log_error(error_data)
             except Exception as log_error:
                 logger.error(f"Failed to log OpenAI error to database: {log_error}")
@@ -464,7 +463,7 @@ class OpenAIService(AIService):
         """
         try:
             # Импортируем здесь чтобы избежать циклических импортов
-            from services.analytics_service import AnalyticsService
+            from services.analytics_service import analytics  # Используем глобальный экземпляр
             from models.analytics_models import OpenAIRequestData
             
             request_data = OpenAIRequestData(
@@ -480,7 +479,6 @@ class OpenAIService(AIService):
                 error_message=error_message
             )
             
-            analytics = AnalyticsService()
             await analytics.log_openai_request(request_data)
         except Exception as e:
             # Логируем ошибку, но не прерываем основной процесс
