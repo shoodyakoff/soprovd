@@ -371,7 +371,7 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await analytics.update_letter_session(session_id, {
                 'generated_letter': letter[:2000],  # Первые 2000 символов для экономии места
                 'generated_letter_length': len(letter),
-                'generation_time_seconds': generation_time,
+                'generation_time_sec': generation_time,
                 'status': 'completed'
             })
             

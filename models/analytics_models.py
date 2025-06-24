@@ -25,18 +25,11 @@ class LetterSessionData:
     resume_text: Optional[str] = None
     resume_length: Optional[int] = None
     selected_style: Optional[str] = None  # professional, casual, bold
-    detected_profession: Optional[str] = None
-    detected_level: Optional[str] = None
-    confidence_score: Optional[float] = None
-    suggested_style: Optional[str] = None
     generated_letter: Optional[str] = None
     generated_letter_length: Optional[int] = None
-    generation_time_seconds: Optional[int] = None
+    generation_time_sec: Optional[int] = None
     openai_model_used: Optional[str] = None
-    openai_tokens_used: Optional[int] = None
     user_regenerated: bool = False
-    user_rating: Optional[int] = None
-    regeneration_count: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
