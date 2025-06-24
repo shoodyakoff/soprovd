@@ -1,25 +1,25 @@
-# Используем официальный Python образ
-FROM python:3.11-slim
+# Сопровод v6.0 - Telegram Bot for Cover Letters
+# Updated dependencies: supabase==2.4.0 + gotrue==2.8.0 (fix proxy error)
+FROM python:3.12-slim
 
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Force complete rebuild - COMMIT fdccee3
-RUN echo "COMMIT: fdccee3 $(date)" > /tmp/build_info && \
-    rm -rf /tmp/* || true && \
-    echo "Cleared cache"
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Копируем файл зависимостей
+# Copy requirements first for better caching
 COPY requirements.txt .
 
-# Устанавливаем зависимости
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем все файлы проекта
+# Copy application code
 COPY . .
 
-# Создаем директорию для логов
+# Create logs directory
 RUN mkdir -p /app/logs
 
-# Указываем команду запуска
+# Run the application
 CMD ["python", "main.py"] 
