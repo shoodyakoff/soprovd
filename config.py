@@ -3,29 +3,34 @@
 Простой поток: вакансия → резюме → письмо
 """
 import os
+import logging
 from dotenv import load_dotenv
 
+# Настройка логирования ДО всего остального
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # DEBUG: Принудительная отладка config.py
-print("🔧 CONFIG.PY LOADING START")
-print(f"🔧 Raw SUPABASE_URL from os.getenv: {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
-print(f"🔧 Raw SUPABASE_KEY from os.getenv: {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
-print(f"🔧 Raw ENVIRONMENT from os.getenv: {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
-print(f"🔧 Raw ANALYTICS_ENABLED from os.getenv: {os.getenv('ANALYTICS_ENABLED', 'NOT_FOUND')}")
+logger.info("🔧 CONFIG.PY LOADING START")
+logger.info(f"🔧 Raw SUPABASE_URL from os.getenv: {os.getenv('SUPABASE_URL', 'NOT_FOUND')}")
+logger.info(f"🔧 Raw SUPABASE_KEY from os.getenv: {os.getenv('SUPABASE_KEY', 'NOT_FOUND')[:20]}...")
+logger.info(f"🔧 Raw ENVIRONMENT from os.getenv: {os.getenv('ENVIRONMENT', 'NOT_FOUND')}")
+logger.info(f"🔧 Raw ANALYTICS_ENABLED from os.getenv: {os.getenv('ANALYTICS_ENABLED', 'NOT_FOUND')}")
 
 # Загружаем переменные окружения
 # Автоматически определяем окружение
 environment = os.getenv('ENVIRONMENT', 'development')
-print(f"🔧 Detected environment: {environment}")
+logger.info(f"🔧 Detected environment: {environment}")
 
 if environment == 'development':
-    print("🔧 Loading .env.dev for development")
+    logger.info("🔧 Loading .env.dev for development")
     load_dotenv('.env.dev')  # Для разработки
 elif environment == 'production':
-    print("🔧 Using Railway environment variables for production")
+    logger.info("🔧 Using Railway environment variables for production")
     # В продакшене Railway сам загружает переменные окружения
     pass  # Ничего не делаем, переменные уже доступны
 else:
-    print(f"🔧 Unknown environment '{environment}', using development mode")
+    logger.info(f"🔧 Unknown environment '{environment}', using development mode")
     load_dotenv('.env.dev')  # Безопасный fallback на dev
 
 # Токены и ключи API
@@ -66,30 +71,30 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
 ANALYTICS_ENABLED = os.getenv('ANALYTICS_ENABLED', 'true').lower() == 'true'
 
-print("🔧 RAILWAY ANALYTICS DEBUG:")
-print(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'NOT_FOUND'}...")
-print(f"   SUPABASE_KEY: {SUPABASE_KEY[:30] if SUPABASE_KEY else 'NOT_FOUND'}...")
-print(f"   ANALYTICS_ENABLED: {ANALYTICS_ENABLED}")
-print(f"   Environment: {environment}")
+logger.info("🔧 RAILWAY ANALYTICS DEBUG:")
+logger.info(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'NOT_FOUND'}...")
+logger.info(f"   SUPABASE_KEY: {SUPABASE_KEY[:30] if SUPABASE_KEY else 'NOT_FOUND'}...")
+logger.info(f"   ANALYTICS_ENABLED: {ANALYTICS_ENABLED}")
+logger.info(f"   Environment: {environment}")
 
 # Проверка аналитики при запуске
 if ANALYTICS_ENABLED and (not SUPABASE_URL or not SUPABASE_KEY):
-    print("⚠️  Warning: Analytics enabled but Supabase credentials missing")
-    print(f"SUPABASE_URL exists: {bool(SUPABASE_URL)}")
-    print(f"SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
-    print(f"Environment: {environment}")
-    print("🚨 RAILWAY: Check your environment variables in Railway dashboard!")
+    logger.warning("⚠️  Warning: Analytics enabled but Supabase credentials missing")
+    logger.warning(f"SUPABASE_URL exists: {bool(SUPABASE_URL)}")
+    logger.warning(f"SUPABASE_KEY exists: {bool(SUPABASE_KEY)}")
+    logger.warning(f"Environment: {environment}")
+    logger.warning("🚨 RAILWAY: Check your environment variables in Railway dashboard!")
     ANALYTICS_ENABLED = False
 elif ANALYTICS_ENABLED:
-    print(f"✅ Analytics configured: URL={SUPABASE_URL[:30] if SUPABASE_URL else 'None'}... KEY={SUPABASE_KEY[:20] if SUPABASE_KEY else 'None'}...")
+    logger.info(f"✅ Analytics configured: URL={SUPABASE_URL[:30] if SUPABASE_URL else 'None'}... KEY={SUPABASE_KEY[:20] if SUPABASE_KEY else 'None'}...")
 else:
-    print("⚠️ Analytics disabled by ANALYTICS_ENABLED=false")
+    logger.warning("⚠️ Analytics disabled by ANALYTICS_ENABLED=false")
 
 # === НАСТРОЙКИ АЛГОРИТМА АНАЛИЗА v6.0 ===
 USE_UNIFIED_ANALYSIS = os.getenv('USE_UNIFIED_ANALYSIS', 'true').lower() == 'true'
 
 # Логируем выбранный алгоритм
 if USE_UNIFIED_ANALYSIS:
-    print("🚀 Using new unified analysis algorithm v6.0")
+    logger.info("🚀 Using new unified analysis algorithm v6.0")
 else:
-    print("🔄 Using legacy multi-step analysis algorithm v5.0") 
+    logger.info("🔄 Using legacy multi-step analysis algorithm v5.0") 

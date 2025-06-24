@@ -74,6 +74,34 @@ async def post_init(application):
     provider_name = AIFactory.get_provider_name()
     logger.info(f"Проверяю {provider_name} API...")
     await check_ai_api()
+    
+    # 🔍 ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА SUPABASE АНАЛИТИКИ
+    print("=" * 60)
+    print("🔍 RAILWAY SUPABASE ANALYTICS CHECK")
+    print("=" * 60)
+    
+    try:
+        from utils.database import SupabaseClient
+        from services.analytics_service import analytics
+        
+        print("📊 Проверяю подключение к Supabase...")
+        logger.info("📊 Проверяю подключение к Supabase...")
+        
+        client = SupabaseClient.get_client()
+        is_available = SupabaseClient.is_available()
+        
+        if client and is_available:
+            print("✅ Supabase аналитика подключена и готова к работе!")
+            logger.info("✅ Supabase аналитика подключена и готова к работе!")
+        else:
+            print("❌ Supabase аналитика недоступна - бот работает без аналитики")
+            logger.warning("❌ Supabase аналитика недоступна - бот работает без аналитики")
+            
+    except Exception as e:
+        print(f"❌ Ошибка проверки Supabase: {e}")
+        logger.error(f"❌ Ошибка проверки Supabase: {e}")
+    
+    print("=" * 60)
 
 def main():
     """

@@ -34,27 +34,27 @@ class SupabaseClient:
                 # Импортируем переменные из config.py
                 from config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY, ANALYTICS_ENABLED
                 
-                print("🔍 RAILWAY DEBUG: Supabase configuration check")
-                print(f"   ANALYTICS_ENABLED: {ANALYTICS_ENABLED}")
-                print(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'None'}...")
-                print(f"   SUPABASE_KEY: {SUPABASE_KEY[:30] if SUPABASE_KEY else 'None'}...")
-                print(f"   SUPABASE_SERVICE_KEY: {SUPABASE_SERVICE_KEY[:30] if SUPABASE_SERVICE_KEY else 'None'}...")
+                logger.info("🔍 RAILWAY DEBUG: Supabase configuration check")
+                logger.info(f"   ANALYTICS_ENABLED: {ANALYTICS_ENABLED}")
+                logger.info(f"   SUPABASE_URL: {SUPABASE_URL[:50] if SUPABASE_URL else 'None'}...")
+                logger.info(f"   SUPABASE_KEY: {SUPABASE_KEY[:30] if SUPABASE_KEY else 'None'}...")
+                logger.info(f"   SUPABASE_SERVICE_KEY: {SUPABASE_SERVICE_KEY[:30] if SUPABASE_SERVICE_KEY else 'None'}...")
                 
                 if not ANALYTICS_ENABLED:
                     logger.info("Analytics disabled by configuration")
-                    print("⚠️ Analytics disabled by ANALYTICS_ENABLED=false")
+                    logger.warning("⚠️ Analytics disabled by ANALYTICS_ENABLED=false")
                     cls._failed_init = True
                     return None
                 
                 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
                     logger.warning("Supabase credentials not found in config")
-                    print("❌ Supabase credentials missing!")
-                    print(f"   SUPABASE_URL exists: {bool(SUPABASE_URL)}")
-                    print(f"   SUPABASE_SERVICE_KEY exists: {bool(SUPABASE_SERVICE_KEY)}")
+                    logger.error("❌ Supabase credentials missing!")
+                    logger.error(f"   SUPABASE_URL exists: {bool(SUPABASE_URL)}")
+                    logger.error(f"   SUPABASE_SERVICE_KEY exists: {bool(SUPABASE_SERVICE_KEY)}")
                     cls._failed_init = True
                     return None
                 
-                print(f"🔄 Trying to initialize Supabase client with SERVICE KEY...")
+                logger.info(f"🔄 Trying to initialize Supabase client with SERVICE KEY...")
                 
                 # 🔑 ИСПОЛЬЗУЕМ SERVICE KEY для записи в аналитику!
                 cls._instance = create_client(
@@ -67,11 +67,11 @@ class SupabaseClient:
                 # Тестируем подключение
                 try:
                     test_result = cls._instance.table('users').select('id').limit(1).execute()
-                    print("✅ Supabase connection test passed")
                     logger.info("✅ Supabase connection test passed")
+                    print("✅ Supabase connection test passed")
                 except Exception as test_e:
-                    print(f"❌ Supabase connection test failed: {test_e}")
                     logger.error(f"❌ Supabase connection test failed: {test_e}")
+                    print(f"❌ Supabase connection test failed: {test_e}")
                     # Не фейлим инициализацию, может быть проблема с правами
                 
             except TypeError as e:
