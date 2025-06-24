@@ -80,12 +80,16 @@ class AnalyticsService:
         """Создать новую сессию генерации письма"""
         def _create_session():
             try:
+                logger.info(f"📊 Создаю letter_session с данными: {session_data.to_dict()}")
                 result = self.supabase.table('letter_sessions').insert(
                     session_data.to_dict()
                 ).execute()
-                return result.data[0]['id'] if result.data else None
+                session_id = result.data[0]['id'] if result.data else None
+                logger.info(f"✅ Letter session создана успешно: {session_id}")
+                return session_id
             except Exception as e:
-                logger.error(f"Failed to create letter session: {e}")
+                logger.error(f"❌ Failed to create letter session: {e}")
+                logger.error(f"❌ Session data was: {session_data.to_dict()}")
                 return None
         
         return await self._execute_async(_create_session)
@@ -138,12 +142,15 @@ class AnalyticsService:
         """Отследить событие пользователя"""
         def _track_event():
             try:
+                logger.info(f"📊 Трекаю событие: {event_data.to_dict()}")
                 self.supabase.table('user_events').insert(
                     event_data.to_dict()
                 ).execute()
+                logger.info(f"✅ Событие '{event_data.event_type}' записано успешно")
                 return True
             except Exception as e:
-                logger.error(f"Failed to track event: {e}")
+                logger.error(f"❌ Failed to track event: {e}")
+                logger.error(f"❌ Event data was: {event_data.to_dict()}")
                 return False
         
         result = await self._execute_async(_track_event)
@@ -163,6 +170,7 @@ class AnalyticsService:
     async def track_vacancy_sent(self, user_id: int, session_id: str, 
                                vacancy_length: int) -> bool:
         """Отследить отправку вакансии"""
+        logger.info(f"📊 Трекаю vacancy_sent: user_id={user_id}, session_id={session_id}, length={vacancy_length}")
         event = EventData(
             user_id=user_id,
             event_type='vacancy_sent',
@@ -174,6 +182,7 @@ class AnalyticsService:
     async def track_resume_sent(self, user_id: int, session_id: str, 
                               resume_length: int) -> bool:
         """Отследить отправку резюме"""
+        logger.info(f"📊 Трекаю resume_sent: user_id={user_id}, session_id={session_id}, length={resume_length}")
         event = EventData(
             user_id=user_id,
             event_type='resume_sent',
@@ -185,6 +194,7 @@ class AnalyticsService:
     async def track_letter_generated(self, user_id: int, session_id: str,
                                    letter_length: int, generation_time: int) -> bool:
         """Отследить успешную генерацию письма"""
+        logger.info(f"📊 Трекаю letter_generated: user_id={user_id}, session_id={session_id}, length={letter_length}, time={generation_time}")
         event = EventData(
             user_id=user_id,
             event_type='letter_generated',
