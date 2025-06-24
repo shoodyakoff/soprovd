@@ -38,17 +38,30 @@ class SupabaseClient:
                     cls._failed_init = True
                     return None
                 
-                # Создаем клиент с совместимыми параметрами
+                print(f"🔄 Trying to initialize Supabase client...")
+                
+                # Создаем клиент с минимальными параметрами
                 cls._instance = create_client(
                     supabase_url=SUPABASE_URL,
                     supabase_key=SUPABASE_KEY
                 )
                 logger.info("✅ Supabase client initialized successfully")
+                print("✅ Supabase client initialized successfully")
+                
+            except TypeError as e:
+                if "proxy" in str(e):
+                    logger.error(f"❌ Supabase version incompatibility (proxy argument): {e}")
+                    print(f"❌ Supabase version incompatibility - need different version")
+                else:
+                    logger.error(f"❌ Supabase TypeError: {e}")
+                cls._failed_init = True
+                print("⚠️ Бот будет работать без аналитики Supabase")
+                return None
                 
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Supabase client: {e}")
                 cls._failed_init = True
-                logger.info("⚠️ Бот будет работать без аналитики Supabase")
+                print("⚠️ Бот будет работать без аналитики Supabase")
                 return None
                 
         return cls._instance
