@@ -1,21 +1,27 @@
 """
-Simple Conversation Handler v6.0
-Упрощенный поток с использованием smart_analyzer_v6
+Simple Conversation Handler v7.2
+Упрощенная система обратной связи: только лайки/дизлайки БЕЗ комментариев
 Релизная версия с улучшенным UX
 """
 import logging
 import time
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from services.smart_analyzer_v6 import generate_simple_letter
+from services.smart_analyzer import generate_simple_letter, generate_improved_letter
 from services.analytics_service import analytics
+from services.subscription_service import subscription_service
+from services.feedback_service import feedback_service
+from services.acquisition_service import acquisition_service
 from models.analytics_models import UserData, LetterSessionData
+from models.feedback_models import LetterFeedbackData, LetterIterationImprovement
+from utils.validators import InputValidator, ValidationMiddleware
+from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard
 
 logger = logging.getLogger(__name__)
 
-# Состояния для v6.0
-WAITING_VACANCY, WAITING_RESUME = range(300, 302)
+# Состояния для v7.2 с упрощенной системой оценок
+WAITING_VACANCY, WAITING_RESUME, WAITING_IMPROVEMENT_REQUEST, WAITING_FEEDBACK = range(300, 304)
 
 # ============================================================================
 # РЕЛИЗНАЯ ВЕРСИЯ 6.0 - ГОТОВА К ПРОДАКШЕНУ
@@ -114,8 +120,16 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Начало диалога v6.0"""
     logger.info("🚀 Начинаем диалог v6.0")
     
-    # Трекаем пользователя
+    # Защита от двойных нажатий - очищаем данные
+    if context.user_data is not None:
+        context.user_data.clear()
+        # Устанавливаем флаги активной сессии и инициализации
+        context.user_data['conversation_state'] = 'active'
+        context.user_data['initialized'] = True  # ВСЕГДА устанавливаем для ConversationHandler
+    
+    # Трекаем пользователя и инициализируем
     user = update.effective_user
+    user_id = None
     if user:
         user_data = UserData(
             telegram_user_id=user.id,
@@ -127,6 +141,27 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id and context.user_data is not None:
             context.user_data['analytics_user_id'] = user_id
             await analytics.track_start_command(user_id)
+            
+            # Трекаем канал привлечения (если новый пользователь)
+            start_param = ' '.join(context.args) if context.args else None
+            if start_param:
+                await acquisition_service.track_user_acquisition(
+                    user_id=user_id,
+                    start_param=start_param
+                )
+    
+    # Проверяем лимиты пользователя
+    if user_id:
+        limits = await subscription_service.check_user_limits(user_id)
+        limit_message = subscription_service.format_limit_message(limits)
+        
+        if not limits['can_generate']:
+            # Пользователь исчерпал лимит
+            if update.callback_query:
+                await update.callback_query.edit_message_text(text=limit_message, parse_mode='HTML')
+            elif update.message:
+                await update.message.reply_text(text=limit_message, parse_mode='HTML')
+            return ConversationHandler.END
     
     # Персональное приветствие с учетом времени
     user_name = ""
@@ -144,19 +179,55 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         time_greeting = "Доброй ночи"
     
-    message = (
-        f"🎯 <b>{time_greeting}{user_name}! Я Сопровод</b>\n\n"
-        "🚀 <b>Я создаю персональные сопроводительные письма к резюме!</b>\n\n"
-        "✨ <b>Что я умею:</b>\n"
-        "• Анализирую вакансию и ваше резюме\n"
-        "• Создаю уникальное письмо под каждую позицию\n"
-        "• Подчеркиваю ваши сильные стороны\n"
-        "• Учитываю требования работодателя\n\n"
-        "⚡ <b>Процесс простой - всего 2 шага:</b>\n"
-        "1️⃣ Отправьте текст вакансии\n"
-        "2️⃣ Отправьте ваше резюме\n\n"
-        "⏰ Письмо будет готово через 30-45 секунд\n\n"
-        "📝 <b>Шаг 1/2:</b> Отправьте текст вакансии\n\n"
+    # Проверяем, показывали ли уже подробное объяснение
+    show_full_intro = context.user_data.get('shown_full_intro', False) if context.user_data else False
+    
+    if not show_full_intro:
+        # Полное сообщение для новых пользователей
+        message = f"""
+{time_greeting}{user_name}! 🎯
+
+<b>Создадим сопроводительное письмо, которое заметят!</b>
+
+📋 <b>Что нужно для идеального письма:</b>
+
+<b>1️⃣ Подробное описание вакансии:</b>
+• Требования к кандидату
+• Обязанности и задачи  
+• Информация о компании
+• Условия работы
+
+<b>2️⃣ Детальное резюме с:</b>
+• Конкретными достижениями и цифрами
+• Релевантным опытом работы
+• Ключевыми навыками
+• Образованием и сертификатами
+
+💡 <b>Совет:</b> Чем подробнее информация, тем точнее и убедительнее будет письмо!
+
+🚀 <b>Начнём с описания вакансии...</b>
+"""
+        # Помечаем что показали полное объяснение
+        if context.user_data is not None:
+            context.user_data['shown_full_intro'] = True
+    else:
+        # Сокращенное сообщение для повторных использований
+        message = f"""
+{time_greeting}{user_name}! 🎯
+
+<b>Создаем новое сопроводительное письмо</b>
+
+🚀 <b>Начнём с описания вакансии...</b>
+"""
+    
+    # Добавляем информацию о лимитах, если есть
+    if user_id:
+        limits = await subscription_service.check_user_limits(user_id)
+        if limits['period_type'] != 'unlimited' and limits['remaining'] <= 15:
+            message += f"\n📊 <b>Остаток писем сегодня: {limits['remaining']}</b>\n\n"
+    
+    message += (
+        "📝 <b>Шаг 1/3:</b> Отправьте текст вакансии\n\n"
         "💡 <i>Совет: Скопируйте полное описание вакансии с сайта работодателя</i>"
     )
     
@@ -165,35 +236,27 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif update.message:
         await update.message.reply_text(text=message, parse_mode='HTML')
     
+    logger.info("🔍 START_CONVERSATION: Возвращаем WAITING_VACANCY")
     return WAITING_VACANCY
 
 
+@ValidationMiddleware.require_initialization
+@ValidationMiddleware.require_text_message
 async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработка вакансии"""
+    logger.info(f"🔍 HANDLE_VACANCY CALLED! Message: {update.message.text[:50] if update.message and update.message.text else 'None'}...")
+    logger.info(f"🔍 context.user_data keys: {list(context.user_data.keys()) if context.user_data else 'None'}")
+    
     if not update.message or not update.message.text:
-        if update.message:
-            await update.message.reply_text(
-                "❌ <b>Нужен текст вакансии</b>\n\n"
-                "📄 Пожалуйста, отправьте текстовое сообщение с описанием вакансии\n\n"
-                "💡 <i>Не прикрепляйте файлы - только текст</i>",
-                parse_mode='HTML'
-            )
+        logger.error("❌ No message or text in handle_vacancy")
         return WAITING_VACANCY
+        
+    vacancy_text = update.message.text.strip()
     
-    vacancy_text = update.message.text
-    
-    if len(vacancy_text) < 100:
-        await update.message.reply_text(
-            "❌ <b>Описание вакансии слишком короткое</b>\n\n"
-            f"📊 Получено: {len(vacancy_text)} символов\n"
-            f"📋 Нужно минимум: 100 символов\n\n"
-            "💡 <b>Что добавить:</b>\n"
-            "• Требования к кандидату\n"
-            "• Обязанности\n"
-            "• Условия работы\n"
-            "• Информация о компании",
-            parse_mode='HTML'
-        )
+    # Валидация текста вакансии
+    is_valid, error_msg = InputValidator.validate_vacancy_text(vacancy_text)
+    if not is_valid:
+        await update.message.reply_text(error_msg, parse_mode='HTML')
         return WAITING_VACANCY
     
     # Сохраняем вакансию
@@ -239,7 +302,7 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     await update.message.reply_text(
         "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
-        "📋 <b>Шаг 2/2:</b> Теперь отправьте ваше резюме\n\n"
+        "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
         "📝 <b>Что отправить:</b>\n"
         "• Полный текст резюме\n"
         "• Можно скопировать с HeadHunter, Хабр Карьера\n"
@@ -253,38 +316,26 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return WAITING_RESUME
 
 
+@ValidationMiddleware.require_initialization
+@ValidationMiddleware.require_text_message
 async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработка резюме и генерация письма"""
     if not update.message or not update.message.text:
-        if update.message:
-            await update.message.reply_text(
-                "❌ <b>Нужен текст резюме</b>\n\n"
-                "📄 Пожалуйста, отправьте ваше резюме в виде текста\n\n"
-                "💡 <i>Скопируйте резюме и вставьте как обычное сообщение</i>",
-                parse_mode='HTML'
-            )
+        return WAITING_RESUME
+        
+    resume_text = update.message.text.strip()
+    
+    # Валидация текста резюме
+    is_valid, error_msg = InputValidator.validate_resume_text(resume_text)
+    if not is_valid:
+        await update.message.reply_text(error_msg, parse_mode='HTML')
         return WAITING_RESUME
     
-    resume_text = update.message.text
-    
-    if len(resume_text) < 100:
-        await update.message.reply_text(
-            "❌ <b>Резюме слишком короткое</b>\n\n"
-            f"📊 Получено: {len(resume_text)} символов\n"
-            f"📋 Нужно минимум: 100 символов\n\n"
-            "💡 <b>Добавьте в резюме:</b>\n"
-            "• Опыт работы (должности, достижения)\n"
-            "• Навыки и компетенции\n"
-            "• Образование\n"
-            "• Дополнительную информацию",
-            parse_mode='HTML'
-        )
-        return WAITING_RESUME
-    
-    # Получаем вакансию
+    # Получаем вакансию и сохраняем резюме
     vacancy_text = None
     if context.user_data is not None:
         vacancy_text = context.user_data.get('vacancy_text')
+        context.user_data['resume_text'] = resume_text  # Сохраняем резюме для итераций
     
     if not vacancy_text:
         await update.message.reply_text("❌ Вакансия потеряна. Начните заново: /start")
@@ -293,7 +344,7 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Показываем динамический прогресс
     processing_msg = await update.message.reply_text(
         "🚀 <b>Начинаю работу над вашим письмом!</b>\n\n"
-        "🔍 <b>Этап 3/3:</b> Анализирую вакансию...\n"
+        "🔍 <b>Шаг 3/3:</b> Анализирую вакансию...\n"
         "⏳ Примерное время: 30-45 секунд\n\n"
         "💭 <i>Создаю персональное письмо специально для вас</i>",
         parse_mode='HTML'
@@ -353,20 +404,89 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             parse_mode='HTML'
         )
         
+        # Получаем статус итераций для показа счетчика
+        iteration_status = None
+        if session_id:
+            try:
+                iteration_status = await feedback_service.get_session_iteration_status(session_id)
+                logger.info(f"🔍 RAILWAY DEBUG: iteration_status получен: {iteration_status}")
+            except Exception as e:
+                logger.error(f"❌ RAILWAY DEBUG: Ошибка получения iteration_status: {e}")
+        else:
+            logger.error(f"❌ RAILWAY DEBUG: session_id is None!")
+        
+        # Проверяем, успешно ли сгенерировалось письмо
+        is_generation_successful = (
+            letter and 
+            letter.strip() and 
+            letter != "Не удалось сгенерировать письмо. Попробуйте еще раз." and
+            letter != "Произошла ошибка при генерации письма. Попробуйте еще раз." and
+            len(letter.strip()) > 50  # Минимальная длина для нормального письма
+        )
+        
+        # Сохраняем данные для кнопок в context.user_data 
+        if context.user_data and session_id:
+            context.user_data['current_session_id'] = session_id
+            context.user_data['vacancy_text'] = vacancy_text  # Для улучшений
+            context.user_data['resume_text'] = resume_text    # Для улучшений
+        
+        # Формируем сообщение и кнопки в зависимости от результата генерации
+        if is_generation_successful:
+            # Письмо сгенерировано успешно
+            feedback_message = f"🎉 <b>Письмо готово за {generation_time} секунд!</b>\n\n"
+            
+            if iteration_status:
+                counter_text = feedback_service.format_iteration_counter(iteration_status)
+                feedback_message += f"{counter_text}\n\n"
+            
+            feedback_message += (
+                "💡 <b>Оцените результат:</b>\n"
+                "• ❤️ Нравится - отлично!\n"
+                "• 👎 Не подходит - попробуем еще раз\n\n"
+                "🍀 <i>Ваша оценка поможет улучшить качество писем!</i>"
+            )
+            
+            # Показываем кнопки оценки
+            if session_id and iteration_status:
+                keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration)
+                logger.info(f"✅ RAILWAY DEBUG: Кнопки оценки созданы для session_id: {session_id}")
+            elif session_id:
+                # Fallback: создаем кнопки с дефолтными значениями если нет iteration_status
+                keyboard = get_feedback_keyboard(session_id, 1)
+                logger.warning(f"⚠️ RAILWAY DEBUG: Использован fallback для кнопок оценки, session_id: {session_id}")
+            else:
+                keyboard = None
+                logger.error(f"❌ RAILWAY DEBUG: Не могу создать кнопки оценки - нет session_id!")
+        else:
+            # Письмо НЕ сгенерировалось
+            feedback_message = f"❌ <b>Не удалось создать письмо</b>\n\n"
+            
+            if iteration_status:
+                counter_text = feedback_service.format_iteration_counter(iteration_status)
+                feedback_message += f"{counter_text}\n\n"
+            
+            feedback_message += (
+                "🔧 <b>Что можно сделать:</b>\n"
+                "• 🔄 Повторить генерацию - попробуем еще раз\n"
+                "• 🆕 Создать новое письмо - начать заново\n\n"
+                "💡 <i>Иногда помогает повторная попытка!</i>"
+            )
+            
+            # Показываем кнопку повтора
+            keyboard = get_retry_keyboard(session_id) if session_id else None
+            logger.warning(f"🔄 RAILWAY DEBUG: Показываю кнопку повтора для session_id: {session_id}")
+        
         await update.message.reply_text(
-            f"🎉 <b>Письмо готово за {generation_time} секунд!</b>\n\n"
-            "✨ <b>Что дальше:</b>\n"
-            "• Скопируйте письмо\n"
-            "• Адаптируйте под себя при необходимости\n"
-            "• Отправляйте работодателю\n\n"
-            "🔄 <b>Создать новое письмо:</b> /start\n"
-            "💬 <b>Есть вопросы:</b> /support\n\n"
-            "🍀 <b>Удачи в поиске работы!</b>",
-            parse_mode='HTML'
+            feedback_message,
+            parse_mode='HTML',
+            reply_markup=keyboard
         )
         
         # Завершаем аналитику
         if user_id and session_id:
+            # Увеличиваем счетчик использованных писем (ТОЛЬКО для новых сессий!)
+            await subscription_service.increment_usage(user_id)
+            
             # Обновляем сессию - добавляем результат генерации
             await analytics.update_letter_session(session_id, {
                 'generated_letter': letter[:2000],  # Первые 2000 символов для экономии места
@@ -420,11 +540,10 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             parse_mode='HTML'
         )
     
-    # Очищаем данные
-    if context.user_data is not None:
-        context.user_data.clear()
+    # НЕ очищаем context.user_data - нужно для кнопок обратной связи!
+    # Переходим в состояние ожидания обратной связи вместо завершения диалога
     
-    return ConversationHandler.END
+    return WAITING_FEEDBACK
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -444,13 +563,524 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
+# ============================================================================
+# ОБРАБОТЧИКИ СИСТЕМЫ ОЦЕНОК И ИТЕРАЦИЙ V7.2
+# УПРОЩЕННАЯ ВЕРСИЯ: только лайки/дизлайки БЕЗ комментариев
+# ============================================================================
+
+async def handle_feedback_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка нажатий кнопок оценки - УПРОЩЕННАЯ ВЕРСИЯ"""
+    query = update.callback_query
+    if not query or not query.data:
+        logger.error("❌ Feedback button: no query or data")
+        return ConversationHandler.END
+    
+    logger.info(f"🔍 Feedback button pressed: {query.data}")
+    await query.answer()
+    
+    # Парсим callback_data: feedback_{type}_{session_id}_{iteration}
+    parts = query.data.split('_')
+    if len(parts) < 4:
+        logger.error(f"❌ Invalid callback data format: {query.data}")
+        await query.edit_message_text("❌ Ошибка: неверный формат данных кнопки")
+        return ConversationHandler.END
+    
+    feedback_type = parts[1]  # like, dislike
+    session_id = parts[2]
+    iteration = int(parts[3])
+    
+    # Получаем пользователя
+    user_id = None
+    if context.user_data:
+        user_id = context.user_data.get('analytics_user_id')
+    
+    if not user_id:
+        logger.error("❌ No user_id in context.user_data")
+        await query.edit_message_text("❌ Ошибка: пользователь не найден")
+        return ConversationHandler.END
+    
+    # Получаем статус итераций
+    iteration_status = await feedback_service.get_session_iteration_status(session_id)
+    if not iteration_status:
+        logger.error(f"❌ No iteration status for session {session_id}")
+        await query.edit_message_text("❌ Ошибка: сессия не найдена")
+        return ConversationHandler.END
+    
+    # СРАЗУ сохраняем оценку в БД (БЕЗ комментария)
+    feedback_data = LetterFeedbackData(
+        session_id=session_id,
+        user_id=user_id,
+        iteration_number=iteration,
+        feedback_type=feedback_type
+    )
+    await feedback_service.save_feedback(feedback_data)
+    
+    # Формируем ответ в зависимости от типа оценки
+    if feedback_type == "like":
+        response_text = (
+            "❤️ <b>Спасибо за оценку!</b>\n\n"
+            "🙏 Мы ценим ваш отзыв! Это помогает нам создавать лучшие письма.\n\n"
+            f"🔄 <b>У вас есть ещё {iteration_status.remaining_iterations} итерации правок</b> "
+            "для этой пары вакансия-резюме, или можете создать новое письмо для другой вакансии.\n\n"
+            "💡 <b>Что вы хотите сделать дальше?</b>"
+        )
+    else:  # dislike
+        response_text = (
+            "👎 <b>Понятно, письмо не подошло.</b>\n\n"
+            "🔧 <b>Мы поможем это исправить!</b>\n\n"
+            f"🔄 <b>Осталось {iteration_status.remaining_iterations} попыток</b> для улучшения этого письма.\n\n"
+            "💡 <b>Что будем делать?</b>"
+        )
+    
+    # Показываем кнопки действий
+    keyboard = get_iteration_keyboard(session_id, iteration_status.remaining_iterations)
+    
+    await query.edit_message_text(
+        response_text,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    
+    return WAITING_FEEDBACK
+
+
+async def handle_improve_letter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка запроса на улучшение письма - НОВАЯ ЛОГИКА"""
+    query = update.callback_query
+    if not query or not query.data:
+        logger.error("❌ Improve letter: no query or data")
+        return ConversationHandler.END
+    
+    logger.info(f"🔄 Improve letter button pressed: {query.data}")
+    
+    # Защита от двойных нажатий
+    await query.answer("🔄 Переходим к улучшению...")
+    
+    # Парсим callback_data: improve_letter_{session_id}
+    parts = query.data.split('_')
+    if len(parts) < 3:
+        logger.error(f"❌ Invalid improve letter callback data: {query.data}")
+        await query.edit_message_text("❌ Ошибка: неверный формат данных кнопки")
+        return ConversationHandler.END
+    
+    session_id = parts[2]
+    
+    # Получаем статус итераций
+    iteration_status = await feedback_service.get_session_iteration_status(session_id)
+    if not iteration_status:
+        logger.error(f"❌ No iteration status for session {session_id}")
+        await query.edit_message_text(
+            "❌ <b>Ошибка получения статуса сессии</b>\n\n"
+            "Попробуйте создать новое письмо: /start",
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+    
+    if not iteration_status.can_iterate:
+        logger.warning(f"⚠️ Cannot iterate: max iterations reached")
+        await query.edit_message_text(
+            "❌ <b>Улучшение недоступно</b>\n\n"
+            f"Достигнуто максимальное количество итераций ({iteration_status.max_iterations})\n\n"
+            "✅ Используйте текущую версию письма или создайте новое: /start",
+            parse_mode='HTML'
+        )
+        return ConversationHandler.END
+    
+    # Сохраняем session_id для дальнейшей обработки
+    if context.user_data:
+        context.user_data['improvement_session_id'] = session_id
+        
+        # Проверяем, что у нас есть необходимые данные для улучшения
+        if not context.user_data.get('vacancy_text') or not context.user_data.get('resume_text'):
+            logger.error("❌ Missing vacancy_text or resume_text in context")
+            await query.edit_message_text(
+                "❌ <b>Недостаточно данных для улучшения</b>\n\n"
+                "Создайте новое письмо: /start",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+    
+    # НОВАЯ ЛОГИКА: показываем только текст БЕЗ кнопок
+    prompt_text = feedback_service.get_improvement_prompt_text(iteration_status.remaining_iterations)
+    
+    await query.edit_message_text(
+        prompt_text,
+        parse_mode='HTML'
+        # БЕЗ reply_markup - никаких кнопок!
+    )
+    
+    return WAITING_IMPROVEMENT_REQUEST
+
+
+async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Повторная генерация письма с уже сохраненными данными"""
+    query = update.callback_query
+    if not query:
+        return ConversationHandler.END
+    
+    await query.answer("🔄 Повторяю генерацию...")
+    
+    # Проверяем наличие сохраненных данных
+    if not context.user_data:
+        await query.edit_message_text(
+            "❌ Данные сессии потеряны\n\n"
+            "🔄 Начните заново: /start"
+        )
+        return ConversationHandler.END
+    
+    vacancy_text = context.user_data.get('vacancy_text')
+    resume_text = context.user_data.get('resume_text')
+    
+    if not vacancy_text or not resume_text:
+        await query.edit_message_text(
+            "❌ Не хватает данных для повтора\n\n"
+            "🔄 Начните заново: /start"
+        )
+        return ConversationHandler.END
+    
+    # Показываем сообщение о повторной генерации
+    await query.edit_message_text(
+        "🔄 <b>Повторяю генерацию письма...</b>\n\n"
+        "⏳ Использую сохраненные данные\n"
+        "🎯 Создаю новое письмо",
+        parse_mode='HTML'
+    )
+    
+    # Повторяем генерацию напрямую с сохраненными данными
+    try:
+        # Импортируем необходимые функции
+        from services.smart_analyzer import generate_simple_letter
+        from services.analytics_service import analytics
+        from services.subscription_service import subscription_service  
+        from services.feedback_service import feedback_service
+        from models.analytics_models import LetterSessionData
+        import time
+        
+        # Получаем user_id
+        user_id = context.user_data.get('analytics_user_id')
+        if not user_id:
+            if query.message:
+                await query.message.reply_text("❌ Ошибка: пользователь не найден")
+            return ConversationHandler.END
+        
+        # Создаем данные для новой сессии
+        session_data = LetterSessionData(
+            user_id=user_id,
+            job_description=vacancy_text,
+            job_description_length=len(vacancy_text),
+            resume_text=resume_text,
+            resume_length=len(resume_text)
+        )
+        
+        # Создаем новую сессию для повторной генерации
+        session_id = await analytics.create_letter_session(session_data)
+        if not session_id:
+            if query.message:
+                await query.message.reply_text("❌ Ошибка создания сессии")
+            return ConversationHandler.END
+        
+        # Генерируем письмо
+        start_time = time.time()
+        letter = await generate_simple_letter(
+            vacancy_text=vacancy_text,
+            resume_text=resume_text,
+            user_id=user_id,
+            session_id=session_id
+        )
+        generation_time = int(time.time() - start_time)
+        
+        # Отправляем результат
+        if query.message:
+            await query.message.reply_text(
+                f"✍️ <b>ПИСЬМО:</b>\n\n{letter}",
+                parse_mode='HTML'
+            )
+        
+        # Проверяем успешность генерации и показываем соответствующие кнопки
+        is_generation_successful = (
+            letter and 
+            letter.strip() and 
+            letter != "Не удалось сгенерировать письмо. Попробуйте еще раз." and
+            letter != "Произошла ошибка при генерации письма. Попробуйте еще раз." and
+            len(letter.strip()) > 50
+        )
+        
+        # Обновляем данные в context
+        context.user_data['current_session_id'] = session_id
+        
+        # Получаем статус итераций
+        iteration_status = await feedback_service.get_session_iteration_status(session_id)
+        
+        if is_generation_successful:
+            # Успешная генерация
+            feedback_message = f"🎉 <b>Письмо готово за {generation_time} секунд!</b>\n\n"
+            
+            if iteration_status:
+                counter_text = feedback_service.format_iteration_counter(iteration_status)
+                feedback_message += f"{counter_text}\n\n"
+            
+            feedback_message += (
+                "💡 <b>Оцените результат:</b>\n"
+                "• ❤️ Нравится - отлично!\n"
+                "• 👎 Не подходит - попробуем еще раз\n\n"
+                "🍀 <i>Ваша оценка поможет улучшить качество писем!</i>"
+            )
+            
+            keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration if iteration_status else 1)
+        else:
+            # Неуспешная генерация
+            feedback_message = f"❌ <b>Не удалось создать письмо</b>\n\n"
+            
+            if iteration_status:
+                counter_text = feedback_service.format_iteration_counter(iteration_status)
+                feedback_message += f"{counter_text}\n\n"
+            
+            feedback_message += (
+                "🔧 <b>Что можно сделать:</b>\n"
+                "• 🔄 Повторить генерацию - попробуем еще раз\n"
+                "• 🆕 Создать новое письмо - начать заново\n\n"
+                "💡 <i>Иногда помогает повторная попытка!</i>"
+            )
+            
+            keyboard = get_retry_keyboard(session_id)
+        
+        if query.message:
+            await query.message.reply_text(
+                feedback_message,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        
+        # Обновляем аналитику
+        if is_generation_successful:
+            await subscription_service.increment_usage(user_id)
+            await analytics.update_letter_session(session_id, {
+                'generated_letter': letter[:2000],
+                'generated_letter_length': len(letter),
+                'generation_time_seconds': generation_time,
+                'status': 'completed'
+            })
+            await analytics.track_letter_generated(user_id, session_id, len(letter), generation_time)
+        
+        return WAITING_FEEDBACK
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка повторной генерации: {e}")
+        if query.message:
+            await query.message.reply_text(
+                "❌ <b>Ошибка при повторной генерации</b>\n\n"
+                "🔄 Попробуйте начать заново: /start",
+                parse_mode='HTML'
+            )
+        return ConversationHandler.END
+
+
+async def handle_improvement_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка запроса на улучшение"""
+    if not update.message or not update.message.text:
+        return WAITING_IMPROVEMENT_REQUEST
+    
+    improvement_request = update.message.text.strip()
+    
+    # Получаем данные
+    if not context.user_data:
+        await update.message.reply_text("❌ Ошибка: данные сессии потеряны")
+        return ConversationHandler.END
+    
+    session_id = context.user_data.get('improvement_session_id')
+    user_id = context.user_data.get('analytics_user_id')
+    vacancy_text = context.user_data.get('vacancy_text')
+    
+    if not all([session_id, user_id, vacancy_text]):
+        await update.message.reply_text("❌ Ошибка: неполные данные для улучшения")
+        return ConversationHandler.END
+    
+    # Проверяем типы данных
+    if not isinstance(session_id, str) or not isinstance(user_id, int) or not isinstance(vacancy_text, str):
+        await update.message.reply_text("❌ Ошибка: некорректные типы данных")
+        return ConversationHandler.END
+    
+    # Показываем прогресс
+    progress_msg = await update.message.reply_text(
+        "🔄 <b>Улучшаю письмо...</b>\n\n"
+        "⏳ Учитываю ваши пожелания\n"
+        "🎯 Создаю улучшенную версию",
+        parse_mode='HTML'
+    )
+    
+    try:
+        # Увеличиваем номер итерации
+        await feedback_service.increment_session_iteration(session_id)
+        
+        # Получаем обновленный статус
+        iteration_status = await feedback_service.get_session_iteration_status(session_id)
+        if not iteration_status:
+            raise Exception("Не удалось получить статус итерации")
+        
+        # Генерируем улучшенное письмо
+        start_time = time.time()
+        
+        # Получаем предыдущее письмо из сессии
+        session_response = await analytics.get_letter_session_by_id(session_id)
+        previous_letter = ""
+        if session_response:
+            previous_letter = session_response.get('generated_letter', '')
+        
+        # Fallback если предыдущее письмо не найдено
+        if not previous_letter:
+            logger.warning(f"⚠️ Previous letter not found for session {session_id}, using simple generation")
+            improved_letter = await generate_simple_letter(
+                vacancy_text=vacancy_text,
+                resume_text=context.user_data.get('resume_text', ''),
+                user_id=user_id,
+                session_id=session_id
+            )
+        else:
+            # Генерируем улучшенное письмо с учетом комментариев
+            logger.info(f"🔄 Improving letter with previous version ({len(previous_letter)} chars)")
+            improved_letter = await generate_improved_letter(
+                vacancy_text=vacancy_text,
+                resume_text=context.user_data.get('resume_text', ''),
+                previous_letter=previous_letter,
+                user_feedback=improvement_request,
+                improvement_request=improvement_request,
+                user_id=user_id,
+                session_id=session_id
+            )
+        
+        generation_time = int(time.time() - start_time)
+        
+        # Сохраняем итерацию
+        iteration_data = LetterIterationImprovement(
+            session_id=session_id,
+            user_id=user_id,
+            iteration_number=iteration_status.current_iteration,
+            user_feedback=improvement_request,
+            improvement_request=improvement_request,
+            previous_letter=previous_letter[:1000] if previous_letter else ""  # Первые 1000 символов
+        )
+        
+        await feedback_service.save_letter_iteration(
+            iteration_data, improved_letter, generation_time
+        )
+        
+        # 📊 АНАЛИТИКА: Трекаем событие улучшения письма
+        from models.analytics_models import EventData
+        
+        event_data = EventData(
+            user_id=user_id,
+            event_type='letter_improved',
+            session_id=session_id,
+            event_data={
+                'iteration_number': iteration_status.current_iteration,
+                'improvement_length': len(improvement_request),
+                'generation_time_seconds': generation_time,
+                'has_previous_letter': bool(previous_letter)
+            }
+        )
+        await analytics.track_event(event_data)
+        
+        # Удаляем прогресс
+        await progress_msg.delete()
+        
+        # Показываем улучшенное письмо
+        await update.message.reply_text(
+            f"✍️ <b>УЛУЧШЕННОЕ ПИСЬМО:</b>\n\n{improved_letter}",
+            parse_mode='HTML'
+        )
+        
+        # Показываем кнопки для новой оценки
+        counter_text = feedback_service.format_iteration_counter(iteration_status)
+        feedback_message = f"🎉 <b>Письмо улучшено за {generation_time} секунд!</b>\n\n{counter_text}\n\n"
+        
+        if iteration_status.remaining_iterations > 0:
+            feedback_message += (
+                "💡 <b>Оцените новую версию:</b>\n"
+                "• ❤️ Нравится - отлично!\n"
+                "• 👎 Не подходит - попробуем еще раз\n\n"
+            )
+            keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration)
+        else:
+            feedback_message += "✅ Используйте это письмо или создайте новое"
+            keyboard = get_final_letter_keyboard()
+        
+        await update.message.reply_text(
+            feedback_message,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка улучшения письма: {e}")
+        
+        try:
+            await progress_msg.delete()
+        except:
+            pass
+        
+        await update.message.reply_text(
+            "❌ <b>Ошибка при улучшении письма</b>\n\n"
+            "🔧 Попробуйте еще раз или создайте новое письмо: /start",
+            parse_mode='HTML'
+        )
+    
+    return WAITING_FEEDBACK
+
+
+async def handle_accept_letter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка принятия письма"""
+    query = update.callback_query
+    if not query:
+        logger.error("❌ Accept letter: no query")
+        return ConversationHandler.END
+    
+    logger.info(f"✅ Letter accepted by user: {query.data}")
+    logger.info(f"🔍 User ID: {query.from_user.id}")
+    logger.info(f"🔍 Chat ID: {query.message.chat_id if query.message else 'None'}")
+    
+    await query.answer("✅ Отлично! Удачи с этим письмом!")
+    
+    await query.edit_message_text(
+        "✅ <b>Письмо принято!</b>\n\n"
+        "🎯 <b>Что дальше:</b>\n"
+        "• Скопируйте письмо\n"
+        "• Адаптируйте под конкретную компанию\n"
+        "• Отправляйте работодателю\n\n"
+        "🔄 <b>Создать новое письмо:</b> /start\n"
+        "💬 <b>Есть вопросы:</b> /support\n\n"
+        "🍀 <b>Удачи в поиске работы!</b>",
+        parse_mode='HTML'
+    )
+    
+    # Очищаем данные
+    if context.user_data:
+        logger.info(f"🔍 Clearing context.user_data with keys: {list(context.user_data.keys())}")
+        context.user_data.clear()
+    else:
+        logger.warning("⚠️ context.user_data is None when accepting letter")
+    
+    return ConversationHandler.END
+
+
+async def handle_waiting_feedback_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка текстовых сообщений в состоянии ожидания обратной связи"""
+    if update.message:
+        await update.message.reply_text(
+            "💡 <b>Используйте кнопки выше для оценки письма</b>\n\n"
+            "🔄 <b>Или отправьте /start для создания нового письма</b>",
+            parse_mode='HTML'
+        )
+    return WAITING_FEEDBACK
+
+
 def get_conversation_handler():
-    """Создает ConversationHandler для v6.0"""
-    from telegram.ext import CommandHandler, MessageHandler, filters
+    """Создает ConversationHandler для v7.2 с упрощенной системой оценок"""
+    from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters
     
     return ConversationHandler(
         entry_points=[
-            CommandHandler("start", start_conversation)
+            CommandHandler("start", start_conversation),
+            CallbackQueryHandler(handle_start_work_callback, pattern=r'^start_work$')
         ],
         states={
             WAITING_VACANCY: [
@@ -458,13 +1088,25 @@ def get_conversation_handler():
             ],
             WAITING_RESUME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
+            ],
+            WAITING_IMPROVEMENT_REQUEST: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_improvement_request)
+            ],
+            WAITING_FEEDBACK: [
+                # Callback handlers для кнопок обратной связи (только лайки/дизлайки)
+                CallbackQueryHandler(handle_feedback_button, pattern=r'^feedback_(like|dislike)_'),
+                CallbackQueryHandler(handle_improve_letter, pattern=r'^improve_letter_'),
+                CallbackQueryHandler(handle_retry_generation, pattern=r'^retry_generation_'),
+                CallbackQueryHandler(start_conversation, pattern=r'^restart$'),
+                # Текстовые сообщения в этом состоянии
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_waiting_feedback_message)
             ]
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation),
             CommandHandler('start', start_conversation)
         ],
-        name="conversation_v6",
+        name="conversation_v7_2",
         persistent=False,
         per_message=False,
         per_chat=True,
@@ -474,10 +1116,134 @@ def get_conversation_handler():
 
 def get_command_handlers():
     """Возвращает список обработчиков команд"""
-    from telegram.ext import CommandHandler
+    from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters
     
     return [
         CommandHandler("help", help_command),
         CommandHandler("about", about_command),
-        CommandHandler("support", support_command)
-    ] 
+        CommandHandler("support", support_command),
+        # Обработчик кнопки создания письма вне сессии
+        CallbackQueryHandler(handle_start_work_callback, pattern=r'^start_work$'),
+        # Обработчик текстовых сообщений вне активной сессии (должен быть последним!)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_outside_session)
+    ]
+
+
+# ============================================================================
+# ОБРАБОТЧИК СООБЩЕНИЙ ВНЕ АКТИВНОЙ СЕССИИ
+# ============================================================================
+
+async def handle_message_outside_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обработчик для сообщений, когда пользователь не находится в активной сессии создания письма
+    """
+    if not update.message or not update.message.text:
+        return
+    
+    # КРИТИЧЕСКИ ВАЖНО: Проверяем, что пользователь НЕ в активной сессии ConversationHandler
+    # Если есть активная сессия создания письма - НЕ обрабатываем сообщение
+    if context.user_data and context.user_data.get('conversation_state'):
+        logger.info(f"🔍 Пользователь в активной сессии, пропускаем outside_session handler")
+        return
+    
+    user = update.effective_user
+    user_name = f", {user.first_name}" if user and user.first_name else ""
+    
+    # Определяем время суток для приветствия
+    current_hour = datetime.now().hour
+    if 6 <= current_hour < 12:
+        time_greeting = "Доброе утро"
+    elif 12 <= current_hour < 18:
+        time_greeting = "Добрый день"
+    elif 18 <= current_hour < 23:
+        time_greeting = "Добрый вечер"
+    else:
+        time_greeting = "Доброй ночи"
+    
+    # Анализируем, что пользователь написал
+    message_text = update.message.text.lower().strip()
+    
+    # Определяем тип сообщения для персонализированного ответа
+    if any(word in message_text for word in ['привет', 'здравствуй', 'добро', 'hi', 'hello']):
+        response_type = "greeting"
+    elif any(word in message_text for word in ['помощь', 'help', 'что делать', 'как работает']):
+        response_type = "help"
+    elif any(word in message_text for word in ['письмо', 'резюме', 'вакансия', 'сопровод', 'работа']):
+        response_type = "work_related"
+    elif any(word in message_text for word in ['спасибо', 'благодарю', 'thanks']):
+        response_type = "thanks"
+    else:
+        response_type = "general"
+    
+    # Формируем персонализированный ответ
+    if response_type == "greeting":
+        main_text = f"{time_greeting}{user_name}! 👋\n\nРад вас видеть!"
+    elif response_type == "help":
+        main_text = f"{time_greeting}{user_name}! 🤝\n\nПомогу вам создать отличное сопроводительное письмо!"
+    elif response_type == "work_related":
+        main_text = f"{time_greeting}{user_name}! 💼\n\nОтлично! Давайте создадим сопроводительное письмо, которое поможет вам получить работу мечты!"
+    elif response_type == "thanks":
+        main_text = f"Пожалуйста{user_name}! 😊\n\nВсегда рад помочь!"
+    else:
+        main_text = f"{time_greeting}{user_name}! 🤖\n\nЯ помогаю создавать сопроводительные письма для поиска работы."
+    
+    # Проверяем лимиты пользователя (если он зарегистрирован)
+    limit_info = ""
+    if context.user_data and context.user_data.get('analytics_user_id'):
+        user_id = context.user_data['analytics_user_id']
+        try:
+            limits = await subscription_service.check_user_limits(user_id)
+            if limits['can_generate']:
+                if limits['period_type'] != 'unlimited' and limits['remaining'] <= 10:
+                    limit_info = f"\n📊 У вас осталось {limits['remaining']} писем"
+            else:
+                limit_info = f"\n⚠️ Дневной лимит исчерпан. {limits['reset_info']}"
+        except Exception as e:
+            logger.error(f"Error checking limits in outside session: {e}")
+    
+    response_message = f"""
+{main_text}
+
+🎯 <b>Что я умею:</b>
+• Анализировать вакансии с помощью ИИ
+• Создавать персональные сопроводительные письма
+• Адаптировать письма под конкретные позиции
+• Работать быстро (30-45 секунд)
+
+💡 <b>Чтобы начать:</b>
+Нажмите кнопку ниже или отправьте команду /start{limit_info}
+
+🚀 <b>Готовы создать письмо, которое заметят?</b>
+"""
+    
+    # Создаем клавиатуру с кнопкой начала работы
+    keyboard = get_start_work_keyboard()
+    
+    await update.message.reply_text(
+        response_message,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+# ============================================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================================
+
+async def handle_start_work_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик кнопки 'Создать письмо' из сообщений вне сессии"""
+    query = update.callback_query
+    if not query:
+        return ConversationHandler.END
+    
+    await query.answer("🚀 Начинаем создание письма!")
+    
+    logger.info("🔍 START_WORK_CALLBACK: Вызываем start_conversation...")
+    
+    # Перенаправляем в стандартный флоу создания письма
+    result = await start_conversation(update, context)
+    logger.info(f"🔍 START_WORK_CALLBACK: start_conversation returned {result}")
+    return result
+
+
+ 

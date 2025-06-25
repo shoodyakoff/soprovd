@@ -97,4 +97,9 @@ USE_UNIFIED_ANALYSIS = os.getenv('USE_UNIFIED_ANALYSIS', 'true').lower() == 'tru
 if USE_UNIFIED_ANALYSIS:
     logger.info("🚀 Using new unified analysis algorithm v6.0")
 else:
-    logger.info("🔄 Using legacy multi-step analysis algorithm v5.0") 
+    logger.info("🔄 Using legacy multi-step analysis algorithm v5.0")
+
+# Настройки системы подписок (НОВОЕ В V7.0)
+SUBSCRIPTIONS_ENABLED = os.getenv('SUBSCRIPTIONS_ENABLED', 'false').lower() == 'true'
+FREE_LETTERS_LIMIT = int(os.getenv('FREE_LETTERS_LIMIT', '3').split('#')[0].strip())  # 3 письма в месяц для free
+PREMIUM_LETTERS_LIMIT = int(os.getenv('PREMIUM_LETTERS_LIMIT', '20').split('#')[0].strip())  # 20 писем в день для premium 

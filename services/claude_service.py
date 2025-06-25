@@ -277,6 +277,20 @@ class ClaudeService(AIService):
                     
             except Exception as fallback_e:
                 logger.error(f"❌ Fallback модель тоже не работает: {fallback_e}")
+                
+                # Последняя попытка - переключиться на OpenAI
+                logger.warning("🔄 Claude недоступен, переключаюсь на OpenAI...")
+                try:
+                    # Избегаем циклического импорта, используя прямой импорт класса
+                    from .openai_service import OpenAIService
+                    fallback_service = OpenAIService()
+                    openai_result = await fallback_service.generate_personalized_letter(prompt, temperature)
+                    if openai_result:
+                        logger.info("✅ OpenAI сработал как fallback для Claude")
+                        return openai_result
+                except Exception as openai_e:
+                    logger.error(f"❌ OpenAI fallback тоже не работает: {openai_e}")
+                
                 return None
 
     async def generate_personalized_letter(self, prompt: str, temperature: Optional[float] = None) -> Optional[str]:
@@ -453,12 +467,17 @@ class ClaudeService(AIService):
             logger.error(f"Ошибка при логировании Claude запроса: {e}")
 
 
-# Глобальный экземпляр сервиса для быстрого доступа  
-claude_service = ClaudeService()
-
+# УДАЛЕН: Глобальный экземпляр убран во избежание конфликтов с AI Factory
+# Используйте ai_factory.get_ai_service() для получения экземпляра
 
 async def generate_letter_with_claude(prompt: str, temperature: Optional[float] = None) -> Optional[str]:
     """
     Удобная функция для генерации письма с готовым промптом через Claude
     """
-    return await claude_service.generate_personalized_letter(prompt, temperature) 
+    from .ai_factory import get_ai_service
+    service = get_ai_service()
+    if isinstance(service, ClaudeService):
+        return await service.generate_personalized_letter(prompt, temperature)
+    else:
+        # Если используется другой провайдер, используем универсальный метод
+        return await service.generate_personalized_letter(prompt, temperature) 

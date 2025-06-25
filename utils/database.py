@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Any
 import logging
 
 # Безопасный импорт Supabase
@@ -7,21 +7,23 @@ try:
     from supabase import create_client, Client
     print("✅ Supabase imported successfully")
     SUPABASE_AVAILABLE = True
+    SupabaseClientType = Client
 except ImportError as e:
     print(f"❌ Supabase import failed: {e}")
     create_client = None
     Client = None
     SUPABASE_AVAILABLE = False
+    SupabaseClientType = Any
 
 logger = logging.getLogger(__name__)
 
 class SupabaseClient:
     """Supabase клиент с улучшенной обработкой ошибок"""
-    _instance: Optional[object] = None
+    _instance: Optional[Any] = None
     _failed_init = False
     
     @classmethod
-    def get_client(cls) -> Optional[object]:
+    def get_client(cls) -> Optional[Any]:
         """Получить клиент Supabase (синглтон)"""
         if cls._instance is None and not cls._failed_init:
             try:

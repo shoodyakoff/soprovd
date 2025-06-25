@@ -131,11 +131,13 @@ def main():
     application.add_handler(v6_handler)
     logger.info("🚀 Стас, v6.0 ConversationHandler добавлен - НОВАЯ ЛОГИКА!")
     
-    # Добавляем команды help, about, support
+    # Добавляем команды help, about, support + обработчик сообщений вне сессии
+    # ВАЖНО: command_handlers содержит MessageHandler для сообщений вне активной сессии
+    # Он должен быть зарегистрирован ПОСЛЕ ConversationHandler, чтобы не перехватывать сообщения в активной сессии
     command_handlers = get_command_handlers()
     for handler in command_handlers:
         application.add_handler(handler)
-    logger.info("✅ Команды help, about, support зарегистрированы!")
+    logger.info("✅ Команды help, about, support + обработчик вне сессии зарегистрированы!")
     
     # Старый help handler удален - используем новый из handlers
     

@@ -485,12 +485,17 @@ class OpenAIService(AIService):
             logger.error(f"Ошибка при логировании OpenAI запроса: {e}")
 
 
-# Глобальный экземпляр сервиса для быстрого доступа  
-openai_service = OpenAIService()
-
+# УДАЛЕН: Глобальный экземпляр убран во избежание конфликтов с AI Factory
+# Используйте ai_factory.get_ai_service() для получения экземпляра
 
 async def generate_letter_with_retry(prompt: str, temperature: Optional[float] = None) -> Optional[str]:
     """
     Удобная функция для генерации письма с готовым промптом
     """
-    return await openai_service.generate_personalized_letter(prompt, temperature) 
+    from .ai_factory import get_ai_service
+    service = get_ai_service()
+    if isinstance(service, OpenAIService):
+        return await service.generate_personalized_letter(prompt, temperature)
+    else:
+        # Если используется другой провайдер, используем универсальный метод
+        return await service.generate_personalized_letter(prompt, temperature) 

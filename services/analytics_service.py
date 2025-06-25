@@ -1,12 +1,15 @@
 import asyncio
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from datetime import datetime
 import traceback
 
 from utils.database import SupabaseClient
 from models.analytics_models import (
     UserData, LetterSessionData, EventData, ErrorData, OpenAIRequestData
+)
+from models.subscription_models import (
+    SubscriptionData, PaymentData, LetterIterationData
 )
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,10 @@ class AnalyticsService:
     def __init__(self):
         self.supabase = SupabaseClient.get_client()
         self.enabled = SupabaseClient.is_available()
+        
+    def _has_supabase(self) -> bool:
+        """Проверяет наличие Supabase клиента"""
+        return self.supabase is not None and hasattr(self.supabase, 'table')
         
     async def _execute_async(self, func, *args, **kwargs):
         """Выполнить операцию асинхронно, чтобы не блокировать бота"""
@@ -36,6 +43,10 @@ class AnalyticsService:
         """Добавить или обновить пользователя"""
         def _track_user():
             try:
+                if not self.supabase:
+                    logger.warning("Supabase client not available")
+                    return None
+                    
                 # Проверяем, существует ли пользователь
                 existing = self.supabase.table('users').select('id').eq(
                     'telegram_user_id', user_data.telegram_user_id
@@ -64,6 +75,9 @@ class AnalyticsService:
         """Получить внутренний ID пользователя"""
         def _get_user_id():
             try:
+                if not self.supabase:
+                    return None
+                    
                 result = self.supabase.table('users').select('id').eq(
                     'telegram_user_id', telegram_user_id
                 ).execute()
@@ -80,6 +94,10 @@ class AnalyticsService:
         """Создать новую сессию генерации письма"""
         def _create_session():
             try:
+                if not self.supabase:
+                    logger.warning("Supabase client not available")
+                    return None
+                    
                 logger.info(f"📊 Создаю letter_session с данными: {session_data.to_dict()}")
                 result = self.supabase.table('letter_sessions').insert(
                     session_data.to_dict()
@@ -98,6 +116,10 @@ class AnalyticsService:
         """Обновить сессию генерации письма"""
         def _update_session():
             try:
+                if not self.supabase:
+                    logger.warning("Supabase client not available")
+                    return False
+                    
                 logger.info(f"📊 Обновляю сессию {session_id} с данными: {updates}")
                 result = self.supabase.table('letter_sessions').update(updates).eq(
                     'id', session_id
@@ -112,11 +134,33 @@ class AnalyticsService:
         result = await self._execute_async(_update_session)
         return result is True
     
+    async def get_letter_session_by_id(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Получить данные сессии по ID"""
+        def _get_session():
+            try:
+                if not self.supabase:
+                    return None
+                    
+                response = self.supabase.table('letter_sessions').select('*').eq(
+                    'id', session_id
+                ).execute()
+                
+                if response.data and len(response.data) > 0:
+                    return response.data[0]
+                return None
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка получения сессии {session_id}: {e}")
+                return None
+        
+        result = await self._execute_async(_get_session)
+        return result if result is not None else None
+    
     async def complete_letter_session(self, session_id: str, 
                                     generated_letter: Optional[str] = None,
                                     generation_time: Optional[int] = None) -> bool:
         """Завершить сессию генерации письма"""
-        updates = {
+        updates: Dict[str, Union[str, int]] = {
             'status': 'completed',
             'session_end': datetime.now().isoformat()
         }
@@ -130,7 +174,7 @@ class AnalyticsService:
     
     async def abandon_letter_session(self, session_id: str) -> bool:
         """Отметить сессию как брошенную"""
-        updates = {
+        updates: Dict[str, str] = {
             'status': 'abandoned',
             'session_end': datetime.now().isoformat()
         }
@@ -142,6 +186,10 @@ class AnalyticsService:
         """Отследить событие пользователя"""
         def _track_event():
             try:
+                if not self.supabase:
+                    logger.warning("Supabase client not available")
+                    return False
+                    
                 logger.info(f"📊 Трекаю событие: {event_data.to_dict()}")
                 self.supabase.table('user_events').insert(
                     event_data.to_dict()
@@ -220,6 +268,9 @@ class AnalyticsService:
         """Логировать ошибку"""
         def _log_error():
             try:
+                if not self.supabase:
+                    return False
+                    
                 self.supabase.table('error_logs').insert(
                     error_data.to_dict()
                 ).execute()
@@ -237,6 +288,10 @@ class AnalyticsService:
         """Логировать запрос к OpenAI"""
         def _log_request():
             try:
+                if not self.supabase:
+                    logger.warning("Supabase client not available")
+                    return False
+                    
                 self.supabase.table('openai_requests').insert(
                     request_data.to_dict()
                 ).execute()
@@ -247,6 +302,154 @@ class AnalyticsService:
         
         result = await self._execute_async(_log_request)
         return result is True
+    
+    # ===================================================
+    # НОВЫЕ МЕТОДЫ ДЛЯ V7.0 - ПОДПИСКИ И ИТЕРАЦИИ
+    # ===================================================
+    
+    async def get_or_create_subscription(self, user_id: int) -> Optional[dict]:
+        """Получить или создать подписку пользователя"""
+        def _get_or_create():
+            try:
+                if not self.supabase:
+                    return None
+                    
+                # Пытаемся найти существующую подписку
+                response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
+                
+                if response.data:
+                    return response.data[0]
+                
+                # Создаем новую подписку
+                subscription_data = SubscriptionData(user_id=user_id)
+                response = self.supabase.table('subscriptions').insert(subscription_data.to_dict()).execute()
+                
+                if response.data:
+                    return response.data[0]
+                    
+                return None
+                
+            except Exception as e:
+                logger.error(f"Failed to get/create subscription: {e}")
+                return None
+        
+        result = await self._execute_async(_get_or_create)
+        return result
+    
+    async def update_subscription(self, user_id: int, updates: dict) -> bool:
+        """Обновить подписку пользователя"""
+        def _update():
+            try:
+                if not self.supabase:
+                    return False
+                    
+                self.supabase.table('subscriptions').update(updates).eq('user_id', user_id).execute()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to update subscription: {e}")
+                return False
+        
+        result = await self._execute_async(_update)
+        return result is True
+    
+    async def increment_letters_used(self, user_id: int) -> bool:
+        """Увеличить счетчик использованных писем"""
+        def _increment():
+            try:
+                if not self.supabase:
+                    return False
+                    
+                # Получаем текущее значение
+                response = self.supabase.table('subscriptions').select('letters_used').eq('user_id', user_id).execute()
+                
+                if response.data:
+                    current_used = response.data[0]['letters_used']
+                    new_used = current_used + 1
+                    
+                    self.supabase.table('subscriptions').update({'letters_used': new_used}).eq('user_id', user_id).execute()
+                    return True
+                    
+                return False
+                
+            except Exception as e:
+                logger.error(f"Failed to increment letters used: {e}")
+                return False
+        
+        result = await self._execute_async(_increment)
+        return result is True
+    
+    async def log_payment(self, payment_data: PaymentData) -> bool:
+        """Логировать платеж"""
+        def _log_payment():
+            try:
+                if not self.supabase:
+                    return False
+                    
+                self.supabase.table('payments').insert(payment_data.to_dict()).execute()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to log payment: {e}")
+                return False
+        
+        result = await self._execute_async(_log_payment)
+        return result is True
+    
+    async def update_payment_status(self, payment_id: str, status: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Обновить статус платежа"""
+        def _update_payment():
+            try:
+                if not self.supabase:
+                    return False
+                    
+                updates: Dict[str, Any] = {'status': status}
+                if metadata:
+                    updates['metadata'] = metadata
+                    
+                self.supabase.table('payments').update(updates).eq('payment_id', payment_id).execute()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to update payment status: {e}")
+                return False
+        
+        result = await self._execute_async(_update_payment)
+        return result is True
+    
+    async def log_letter_iteration(self, iteration_data: LetterIterationData) -> bool:
+        """Логировать итерацию письма"""
+        def _log_iteration():
+            try:
+                if not self.supabase:
+                    return False
+                    
+                self.supabase.table('letter_iterations').insert(iteration_data.to_dict()).execute()
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to log letter iteration: {e}")
+                return False
+        
+        result = await self._execute_async(_log_iteration)
+        return result is True
+    
+    async def get_session_iterations_count(self, session_id: str) -> int:
+        """Получить количество итераций для сессии"""
+        def _get_count():
+            try:
+                if not self.supabase:
+                    return 0
+                    
+                response = self.supabase.table('letter_iterations').select('id').eq('session_id', session_id).execute()
+                return len(response.data) if response.data else 0
+                
+            except Exception as e:
+                logger.error(f"Failed to get iterations count: {e}")
+                return 0
+        
+        result = await self._execute_async(_get_count)
+        return result or 0
 
 # Глобальный экземпляр сервиса
 analytics = AnalyticsService() 

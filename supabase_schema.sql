@@ -10,14 +10,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ
 -- ===================================================
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id BIGINT NOT NULL DEFAULT nextval('users_id_seq'::regclass) PRIMARY KEY,
     telegram_user_id BIGINT UNIQUE NOT NULL,
     username VARCHAR(255),
     first_name VARCHAR(255),
     last_name VARCHAR(255),
     language_code VARCHAR(10),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    total_generations INTEGER DEFAULT 0
 );
 
 -- Индексы для users
@@ -29,7 +30,7 @@ CREATE INDEX idx_users_created_at ON users(created_at);
 -- ===================================================
 CREATE TABLE IF NOT EXISTS letter_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'started' CHECK (status IN ('started', 'completed', 'abandoned')),
     mode VARCHAR(20),
     job_description TEXT,
@@ -41,12 +42,16 @@ CREATE TABLE IF NOT EXISTS letter_sessions (
     generated_letter_length INTEGER,
     generation_time_seconds INTEGER,
     openai_model_used VARCHAR(50),
-    user_regenerated BOOLEAN DEFAULT FALSE,
-    regeneration_count INTEGER DEFAULT 0,
     session_start TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     session_end TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    subscription_id INTEGER REFERENCES subscriptions(id),
+    letters_used_count INTEGER DEFAULT 1,
+    is_premium_feature BOOLEAN DEFAULT false,
+    max_iterations INTEGER DEFAULT 3,
+    current_iteration INTEGER DEFAULT 1,
+    has_feedback BOOLEAN DEFAULT false
 );
 
 -- Индексы для letter_sessions
@@ -61,8 +66,8 @@ CREATE INDEX idx_sessions_openai_model ON letter_sessions(openai_model_used);
 -- 3. ТАБЛИЦА СОБЫТИЙ ПОЛЬЗОВАТЕЛЕЙ
 -- ===================================================
 CREATE TABLE IF NOT EXISTS user_events (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
     event_type VARCHAR(50) NOT NULL,
     session_id UUID REFERENCES letter_sessions(id) ON DELETE SET NULL,
     event_data JSONB,
@@ -80,11 +85,11 @@ CREATE INDEX idx_events_data_gin ON user_events USING GIN(event_data);
 -- 4. ТАБЛИЦА ЛОГОВ ОШИБОК
 -- ===================================================
 CREATE TABLE IF NOT EXISTS error_logs (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    session_id UUID REFERENCES letter_sessions(id) ON DELETE SET NULL,
     error_type VARCHAR(100) NOT NULL,
     error_message TEXT NOT NULL,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    session_id UUID REFERENCES letter_sessions(id) ON DELETE SET NULL,
     stack_trace TEXT,
     handler_name VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -99,7 +104,9 @@ CREATE INDEX idx_errors_created_at ON error_logs(created_at);
 -- 5. ТАБЛИЦА ЗАПРОСОВ К OPENAI
 -- ===================================================
 CREATE TABLE IF NOT EXISTS openai_requests (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    session_id UUID REFERENCES letter_sessions(id) ON DELETE SET NULL,
     model VARCHAR(50) NOT NULL,
     request_type VARCHAR(50) NOT NULL,
     prompt_tokens INTEGER NOT NULL,
@@ -107,8 +114,6 @@ CREATE TABLE IF NOT EXISTS openai_requests (
     total_tokens INTEGER NOT NULL,
     response_time_ms INTEGER NOT NULL,
     success BOOLEAN DEFAULT TRUE,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    session_id UUID REFERENCES letter_sessions(id) ON DELETE SET NULL,
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -167,7 +172,149 @@ CREATE POLICY "Service role can do everything" ON openai_requests
     FOR ALL USING (auth.role() = 'service_role');
 
 -- ===================================================
--- 8. ПОЛЕЗНЫЕ VIEWS ДЛЯ АНАЛИТИКИ
+-- 8. НОВЫЕ ТАБЛИЦЫ ДЛЯ V7.2 - УПРОЩЕННАЯ СИСТЕМА ОЦЕНОК
+-- ===================================================
+
+-- Таблица подписок пользователей
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_type VARCHAR(20) DEFAULT 'free' CHECK (plan_type IN ('free', 'premium')),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
+    letters_limit INTEGER DEFAULT 3,
+    letters_used INTEGER DEFAULT 0,
+    period_start TIMESTAMP WITH TIME ZONE DEFAULT DATE_TRUNC('month', CURRENT_DATE),
+    period_end TIMESTAMP WITH TIME ZONE DEFAULT (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'),
+    auto_renew BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true,
+    cancellation_reason VARCHAR(100),
+    cancelled_at TIMESTAMP WITH TIME ZONE,
+    source VARCHAR(100) DEFAULT 'manual',
+    previous_subscription_id INTEGER REFERENCES subscriptions(id)
+);
+
+-- Индексы для subscriptions
+CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
+CREATE INDEX idx_subscriptions_type ON subscriptions(plan_type);
+CREATE INDEX idx_subscriptions_status ON subscriptions(status);
+
+-- Таблица платежей
+CREATE TABLE IF NOT EXISTS payments (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    payment_id VARCHAR(100) UNIQUE NOT NULL, -- ID от платежной системы
+    amount DECIMAL(10,2) NOT NULL,
+    currency VARCHAR(3) DEFAULT 'RUB',
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'failed', 'refunded')),
+    provider VARCHAR(50), -- yookassa, stripe, etc
+    plan_type VARCHAR(20) DEFAULT 'premium',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Индексы для payments
+CREATE INDEX idx_payments_user_id ON payments(user_id);
+CREATE INDEX idx_payments_status ON payments(status);
+CREATE INDEX idx_payments_payment_id ON payments(payment_id);
+
+-- Таблица итераций писем
+CREATE TABLE IF NOT EXISTS letter_iterations (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES letter_sessions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    iteration_number INTEGER NOT NULL DEFAULT 1,
+    user_feedback TEXT,
+    improvement_request TEXT,
+    generated_letter TEXT,
+    generation_time_seconds INTEGER,
+    ai_model_used VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Индексы для letter_iterations
+CREATE INDEX idx_iterations_session_id ON letter_iterations(session_id);
+CREATE INDEX idx_iterations_user_id ON letter_iterations(user_id);
+CREATE INDEX idx_iterations_number ON letter_iterations(iteration_number);
+
+-- Упрощенная таблица оценок писем (БЕЗ комментариев)
+CREATE TABLE IF NOT EXISTS letter_feedback (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES letter_sessions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    iteration_number INTEGER NOT NULL DEFAULT 1,
+    -- Только лайки и дизлайки, БЕЗ комментариев
+    feedback_type VARCHAR(20) CHECK (feedback_type IN ('like', 'dislike')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(session_id, iteration_number)
+);
+
+-- Индексы для letter_feedback
+CREATE INDEX idx_letter_feedback_session ON letter_feedback(session_id);
+CREATE INDEX idx_letter_feedback_user ON letter_feedback(user_id);
+CREATE INDEX idx_letter_feedback_type ON letter_feedback(feedback_type);
+CREATE INDEX idx_letter_feedback_created ON letter_feedback(created_at);
+
+-- Таблица каналов привлечения
+CREATE TABLE IF NOT EXISTS acquisition_channels (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    utm_source VARCHAR(100),
+    utm_medium VARCHAR(100),
+    utm_campaign VARCHAR(100),
+    utm_content VARCHAR(100),
+    utm_term VARCHAR(100),
+    referrer_url TEXT,
+    landing_page VARCHAR(255),
+    device_type VARCHAR(50),
+    telegram_start_param VARCHAR(100),
+    referral_user_id INTEGER REFERENCES users(id),
+    session_count INTEGER DEFAULT 0,
+    first_session_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_session_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Индексы для acquisition_channels
+CREATE INDEX idx_acquisition_user ON acquisition_channels(user_id);
+CREATE INDEX idx_acquisition_source ON acquisition_channels(utm_source);
+CREATE INDEX idx_acquisition_campaign ON acquisition_channels(utm_campaign);
+CREATE INDEX idx_acquisition_referral ON acquisition_channels(referral_user_id);
+
+-- Триггеры для новых таблиц
+CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_payments_updated_at BEFORE UPDATE ON payments
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS для новых таблиц
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE letter_iterations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE letter_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE acquisition_channels ENABLE ROW LEVEL SECURITY;
+
+-- Политики для новых таблиц
+CREATE POLICY "Service role can do everything" ON subscriptions
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role can do everything" ON payments
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role can do everything" ON letter_iterations
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role can do everything" ON letter_feedback
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role can do everything" ON acquisition_channels
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- ===================================================
+-- 9. ПОЛЕЗНЫЕ VIEWS ДЛЯ АНАЛИТИКИ
 -- ===================================================
 
 -- Сводка пользователей

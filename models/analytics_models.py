@@ -5,7 +5,7 @@ import json
 
 @dataclass
 class UserData:
-    telegram_user_id: int
+    telegram_user_id: int  # Соответствует BIGINT в БД
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -17,7 +17,7 @@ class UserData:
 @dataclass  
 class LetterSessionData:
     """Сессия генерации сопроводительного письма"""
-    user_id: int
+    user_id: int  # Соответствует BIGINT в БД, но Python int обрабатывает это корректно
     status: str = 'started'  # started, completed, abandoned
     mode: Optional[str] = None  # simple, advanced, etc.
     job_description: Optional[str] = None
@@ -29,7 +29,10 @@ class LetterSessionData:
     generated_letter_length: Optional[int] = None
     generation_time_seconds: Optional[int] = None
     openai_model_used: Optional[str] = None
-    user_regenerated: bool = False
+    # Поля для системы итераций v7.1 (соответствуют схеме БД)
+    current_iteration: int = 1
+    max_iterations: int = 3
+    has_feedback: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -38,9 +41,9 @@ class LetterSessionData:
 
 @dataclass
 class EventData:
-    user_id: int
+    user_id: int  # Соответствует BIGINT в БД
     event_type: str  # 'start', 'vacancy_sent', 'resume_sent', 'letter_generated', 'restart'
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None  # UUID в БД, но передается как строка
     event_data: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -53,8 +56,8 @@ class EventData:
 class ErrorData:
     error_type: str
     error_message: str
-    user_id: Optional[int] = None
-    session_id: Optional[str] = None
+    user_id: Optional[int] = None  # Соответствует BIGINT в БД
+    session_id: Optional[str] = None  # UUID в БД, но передается как строка
     stack_trace: Optional[str] = None
     handler_name: Optional[str] = None
     
@@ -71,8 +74,8 @@ class OpenAIRequestData:
     total_tokens: int
     response_time_ms: int
     success: bool = True
-    user_id: Optional[int] = None
-    session_id: Optional[str] = None
+    user_id: Optional[int] = None  # Соответствует BIGINT в БД
+    session_id: Optional[str] = None  # UUID в БД, но передается как строка
     error_message: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
