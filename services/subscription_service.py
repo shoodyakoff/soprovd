@@ -32,27 +32,30 @@ class SubscriptionService:
         }
         """
         if not self.enabled:
-            # Если подписки выключены - разрешаем всё
-            return {
-                'can_generate': True,
-                'letters_used': 0,
-                'letters_limit': 999999,
-                'plan_type': 'unlimited',
-                'remaining': 999999,
-                'period_type': 'unlimited'
-            }
+            # Если подписки выключены - даем Free план вместо unlimited
+            return self._free_access_fallback()
         
         try:
             if not self.supabase:
-                logger.warning("Supabase not available, allowing generation")
-                return self._unlimited_access()
+                logger.warning("Supabase not available, giving Free access")
+                return self._free_access_fallback()
             
             # Получаем подписку пользователя
             response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
             
             if not response.data:
-                logger.warning(f"No subscription found for user {user_id}")
-                return self._unlimited_access()
+                logger.info(f"No subscription found for user {user_id}, using existing analytics method")
+                # Используем существующий метод из analytics_service
+                from services.analytics_service import analytics
+                subscription = await analytics.get_or_create_subscription(user_id)
+                if not subscription:
+                    logger.error(f"Failed to create subscription for user {user_id}")
+                    return self._free_access_fallback()
+                # Получаем созданную подписку
+                response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
+                if not response.data:
+                    logger.error(f"Analytics created subscription but not found in DB for user {user_id}")
+                    return self._free_access_fallback()
             
             subscription = response.data[0]
             
@@ -97,19 +100,23 @@ class SubscriptionService:
             
         except Exception as e:
             logger.error(f"Error checking user limits: {e}")
-            # В случае ошибки разрешаем генерацию
-            return self._unlimited_access()
+            # В случае ошибки даем Free доступ, а не unlimited
+            return self._free_access_fallback()
     
-    def _unlimited_access(self) -> Dict[str, Any]:
-        """Безлимитный доступ (fallback)"""
+
+    
+    def _free_access_fallback(self) -> Dict[str, Any]:
+        """Free доступ (fallback для новых пользователей)"""
         return {
             'can_generate': True,
             'letters_used': 0,
-            'letters_limit': 999999,
-            'plan_type': 'unlimited',
-            'remaining': 999999,
-            'period_type': 'unlimited'
+            'letters_limit': 3,
+            'plan_type': 'free',
+            'remaining': 3,
+            'period_type': 'monthly'
         }
+    
+
     
     async def _reset_limits(self, user_id: int, plan_type: str) -> bool:
         """Сбросить лимиты пользователя в зависимости от плана"""
@@ -163,8 +170,16 @@ class SubscriptionService:
             # Получаем текущее значение
             response = self.supabase.table('subscriptions').select('letters_used').eq('user_id', user_id).execute()
             if not response.data:
-                logger.warning(f"No subscription found for user {user_id}")
-                return False
+                logger.info(f"No subscription found for user {user_id} during increment, using analytics method")
+                from services.analytics_service import analytics
+                subscription = await analytics.get_or_create_subscription(user_id)
+                if not subscription:
+                    logger.error(f"Failed to create subscription for increment for user {user_id}")
+                    return False
+                response = self.supabase.table('subscriptions').select('letters_used').eq('user_id', user_id).execute()
+                if not response.data:
+                    logger.error(f"Analytics subscription not found in increment for user {user_id}")
+                    return False
             
             current_used = response.data[0]['letters_used']
             new_used = current_used + 1

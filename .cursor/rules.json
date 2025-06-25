@@ -1,0 +1,37 @@
+{
+  "ai_prompts": [
+    "НИКОГДА не изменяй UNIFIED_ANALYSIS_PROMPT без explicit approval",
+    "Промпты версионируются отдельно - создавай _v7, _v8 копии",
+    "При изменении промптов - обязательно A/B тест"
+  ],
+  "database": [
+    "НЕ трогай supabase_schema.sql напрямую - только через миграции",
+    "Все изменения схемы через отдельные .sql файлы",
+    "Проверяй RLS политики при добавлении таблиц/полей",
+    "Analytics запросы батчить - не по одному event"
+  ],
+  "ai_services": [
+    "Всегда сохраняй fallback механизмы OpenAI ↔ Claude",
+    "Логируй AI requests с tokens и response_time",
+    "Не убирай error handling для AI APIs",
+    "Timeout для AI запросов - максимум 60 секунд"
+  ],
+  "performance": [
+    "Проверяй N+1 query problems в analytics",
+    "Кэшируй user limits и subscription data",
+    "Батчи для user_events вместо отдельных INSERT",
+    "Async/await для всех DB операций"
+  ],
+  "security": [
+    "НЕ логируй PII (ФИО, телефоны, email из резюме)",
+    "Все user inputs валидировать на длину и содержимое",
+    "Rate limiting для всех user actions",
+    "Environment variables только через config.py"
+  ],
+  "telegram": [
+    "ConversationHandler state должен быть persistent",
+    "Callback query handlers с proper error handling",
+    "Keyboard markup через utils/keyboards.py",
+    "Все сообщения через message templates"
+  ]
+} 
