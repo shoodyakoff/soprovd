@@ -220,11 +220,11 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
 🚀 <b>Начнём с описания вакансии...</b>
 """
     
-    # Добавляем информацию о лимитах, если есть
+    # Добавляем информацию о подписке и лимитах
     if user_id:
         limits = await subscription_service.check_user_limits(user_id)
-        if limits['period_type'] != 'unlimited' and limits['remaining'] <= 15:
-            message += f"\n📊 <b>Остаток писем сегодня: {limits['remaining']}</b>\n\n"
+        subscription_info = subscription_service.format_subscription_info(limits)
+        message += f"\n{subscription_info}\n"
     
     message += (
         "📝 <b>Шаг 1/3:</b> Отправьте текст вакансии\n\n"
@@ -1108,7 +1108,7 @@ def get_conversation_handler():
         ],
         name="conversation_v7_2",
         persistent=False,
-        per_message=False,
+        per_message=False,  # False для работы с MessageHandler и CallbackQueryHandler
         per_chat=True,
         per_user=True
     )
@@ -1187,17 +1187,17 @@ async def handle_message_outside_session(update: Update, context: ContextTypes.D
     else:
         main_text = f"{time_greeting}{user_name}! 🤖\n\nЯ помогаю создавать сопроводительные письма для поиска работы."
     
-    # Проверяем лимиты пользователя (если он зарегистрирован)
+    # Проверяем лимиты и подписку пользователя (если он зарегистрирован)
     limit_info = ""
     if context.user_data and context.user_data.get('analytics_user_id'):
         user_id = context.user_data['analytics_user_id']
         try:
             limits = await subscription_service.check_user_limits(user_id)
-            if limits['can_generate']:
-                if limits['period_type'] != 'unlimited' and limits['remaining'] <= 10:
-                    limit_info = f"\n📊 У вас осталось {limits['remaining']} писем"
-            else:
-                limit_info = f"\n⚠️ Дневной лимит исчерпан. {limits['reset_info']}"
+            subscription_info = subscription_service.format_subscription_info(limits)
+            limit_info = f"\n{subscription_info}"
+            
+            if not limits['can_generate']:
+                limit_info += f"⚠️ Лимит исчерпан - обратитесь в поддержку: /support"
         except Exception as e:
             logger.error(f"Error checking limits in outside session: {e}")
     

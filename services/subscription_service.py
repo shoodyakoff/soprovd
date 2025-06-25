@@ -200,14 +200,39 @@ class SubscriptionService:
             )
         
         # Показываем остаток при малом количестве
-        if limits['remaining'] <= 5:
+        remaining = limits.get('remaining', 0)
+        if remaining <= 5:
             period_text = "сегодня" if limits['period_type'] == 'daily' else "в этом месяце"
             return (
-                f"📊 <b>Остаток писем {period_text}: {limits['remaining']}</b>\n"
+                f"📊 <b>Остаток писем {period_text}: {remaining}</b>\n"
                 f"💡 Помните: правки письма не засчитываются в лимит"
             )
         
         return ""  # Не показываем сообщение при большом остатке
+
+    def format_subscription_info(self, limits: Dict[str, Any]) -> str:
+        """Форматировать информацию о подписке для стартового сообщения"""
+        # Определяем название плана
+        plan_name = {
+            'free': 'Бесплатная',
+            'premium': 'Премиум'
+        }.get(limits['plan_type'], limits['plan_type'].title())
+        
+        # Определяем период
+        period_text = "сегодня" if limits['period_type'] == 'daily' else "в этом месяце"
+        
+        # Определяем цвет эмодзи в зависимости от остатка
+        if limits['remaining'] == 0:
+            emoji = "🔴"
+        elif limits['remaining'] <= 3:
+            emoji = "🟡"
+        else:
+            emoji = "🟢"
+        
+        return (
+            f"💎 <b>Подписка:</b> {plan_name}\n"
+            f"{emoji} <b>Писем осталось {period_text}:</b> {limits['remaining']}/{limits['letters_limit']}\n"
+        )
 
 # Глобальный экземпляр
 subscription_service = SubscriptionService() 
