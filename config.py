@@ -102,4 +102,20 @@ else:
 # Настройки системы подписок (НОВОЕ В V7.0)
 SUBSCRIPTIONS_ENABLED = os.getenv('SUBSCRIPTIONS_ENABLED', 'false').lower() == 'true'
 FREE_LETTERS_LIMIT = int(os.getenv('FREE_LETTERS_LIMIT', '3').split('#')[0].strip())  # 3 письма в месяц для free
-PREMIUM_LETTERS_LIMIT = int(os.getenv('PREMIUM_LETTERS_LIMIT', '20').split('#')[0].strip())  # 20 писем в день для premium 
+PREMIUM_LETTERS_LIMIT = int(os.getenv('PREMIUM_LETTERS_LIMIT', '20').split('#')[0].strip())  # 20 писем в день для premium
+
+# === НАСТРОЙКИ БЕЗОПАСНОСТИ v9.2 ===
+RATE_LIMITING_ENABLED = os.getenv('RATE_LIMITING_ENABLED', 'true').lower() == 'true'
+ADMIN_TELEGRAM_IDS = [int(x.strip()) for x in os.getenv('ADMIN_TELEGRAM_IDS', '').split(',') if x.strip().isdigit()]
+
+# Rate limiting лимиты
+RATE_LIMIT_COMMANDS_PER_MINUTE = int(os.getenv('RATE_LIMIT_COMMANDS_PER_MINUTE', '5'))
+RATE_LIMIT_AI_PER_5MIN = int(os.getenv('RATE_LIMIT_AI_PER_5MIN', '3'))
+MAX_TEXT_SIZE_KB = int(os.getenv('MAX_TEXT_SIZE_KB', '50'))
+
+logger.info("🔒 SECURITY SETTINGS v9.2:")
+logger.info(f"   Rate limiting enabled: {RATE_LIMITING_ENABLED}")
+logger.info(f"   Admin IDs: {ADMIN_TELEGRAM_IDS}")
+logger.info(f"   Commands limit: {RATE_LIMIT_COMMANDS_PER_MINUTE}/min")
+logger.info(f"   AI requests limit: {RATE_LIMIT_AI_PER_5MIN}/5min")
+logger.info(f"   Max text size: {MAX_TEXT_SIZE_KB}KB") 

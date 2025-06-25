@@ -18,8 +18,17 @@ from models.feedback_models import LetterFeedbackData, LetterIterationImprovemen
 from utils.validators import InputValidator, ValidationMiddleware
 from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard
 from utils.database import check_user_needs_consent, save_user_consent
+from utils.rate_limiter import rate_limit, rate_limiter
+from config import RATE_LIMITING_ENABLED, ADMIN_TELEGRAM_IDS
 
 logger = logging.getLogger(__name__)
+
+# Инициализация rate limiter (v9.2 Security)
+if RATE_LIMITING_ENABLED:
+    rate_limiter.set_admin_ids(ADMIN_TELEGRAM_IDS)
+    logger.info(f"🔒 Rate limiting enabled with {len(ADMIN_TELEGRAM_IDS)} admins")
+else:
+    logger.info("🔒 Rate limiting disabled")
 
 # Состояния для v7.2 с упрощенной системой оценок
 WAITING_VACANCY, WAITING_RESUME, WAITING_IMPROVEMENT_REQUEST, WAITING_FEEDBACK = range(300, 304)
@@ -40,6 +49,7 @@ WAITING_VACANCY, WAITING_RESUME, WAITING_IMPROVEMENT_REQUEST, WAITING_FEEDBACK =
 # ============================================================================
 
 
+@rate_limit('commands')
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать справку по командам"""
     if update.message:
@@ -63,6 +73,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
 
 
+@rate_limit('commands')
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Информация о боте"""
     if update.message:
@@ -90,6 +101,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
 
+@rate_limit('commands')
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Контакты поддержки"""
     if update.message:
@@ -104,6 +116,7 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 
+@rate_limit('commands')
 async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начало диалога v6.0"""
     logger.info("🚀 Начинаем диалог v6.0")
@@ -228,6 +241,7 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return WAITING_VACANCY
 
 
+@rate_limit('commands', check_text_size=True)
 @ValidationMiddleware.require_initialization
 @ValidationMiddleware.require_text_message
 async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -304,6 +318,7 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return WAITING_RESUME
 
 
+@rate_limit('ai_requests', check_text_size=True)
 @ValidationMiddleware.require_initialization
 @ValidationMiddleware.require_text_message
 async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -419,13 +434,16 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         # 🎯 ПРОСТАЯ ГЕНЕРАЦИЯ v6.1: Только письмо, без сложностей
         start_time = time.time()
         
-        # Обновляем сессию - добавляем данные резюме
+        # Обновляем сессию - добавляем данные резюме (с санитизацией v9.2)
         if user_id and session_id:
             from services.ai_factory import AIFactory
             current_provider = AIFactory.get_provider_name()
             
+            # Санитизируем резюме для БД (PII protection v9.2)
+            sanitized_resume = InputValidator.sanitize_resume_text(resume_text)
+            
             await analytics.update_letter_session(session_id, {
-                'resume_text': resume_text[:1000],  # Первые 1000 символов для экономии места
+                'resume_text': sanitized_resume[:1000],  # Первые 1000 символов санитизированного текста
                 'resume_length': len(resume_text),
                 'openai_model_used': current_provider.lower()  # 'openai' или 'claude'
             })
@@ -756,6 +774,7 @@ async def handle_improve_letter(update: Update, context: ContextTypes.DEFAULT_TY
     return WAITING_IMPROVEMENT_REQUEST
 
 
+@rate_limit('ai_requests')
 async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Повторная генерация письма с уже сохраненными данными"""
     query = update.callback_query
@@ -919,6 +938,7 @@ async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
 
+@rate_limit('ai_requests', check_text_size=True)
 async def handle_improvement_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработка запроса на улучшение"""
     if not update.message or not update.message.text:
@@ -1518,6 +1538,7 @@ async def handle_message_outside_session(update: Update, context: ContextTypes.D
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================================
 
+@rate_limit('commands')
 async def handle_start_work_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработчик кнопки 'Создать письмо' из сообщений вне сессии"""
     query = update.callback_query

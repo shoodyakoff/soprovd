@@ -99,12 +99,12 @@
 НЕ меняй supabase_schema.sql напрямую!
 Пример структуры миграции:
 -- FORWARD MIGRATION
-ALTER TABLE user_sessions ADD COLUMN new_field VARCHAR(50) DEFAULT 'default_value';
-CREATE INDEX idx_user_sessions_new_field ON user_sessions(new_field);
+ALTER TABLE users ADD COLUMN new_field VARCHAR(50) DEFAULT 'default_value';
+CREATE INDEX idx_users_new_field ON users(new_field);
 
 -- ROLLBACK COMMANDS (в комментариях)
--- DROP INDEX idx_user_sessions_new_field;
--- ALTER TABLE user_sessions DROP COLUMN new_field;
+-- DROP INDEX idx_users_new_field;
+-- ALTER TABLE users DROP COLUMN new_field;
 ```
 
 ### AI Prompt Testing

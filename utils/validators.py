@@ -143,20 +143,70 @@ class InputValidator:
     
     @staticmethod
     def sanitize_for_logging(text: str) -> str:
-        """Санитизация текста для логирования (убираем PII)"""
+        """Санитизация текста для логирования (убираем PII) - ENHANCED v9.2"""
+        if not text:
+            return text
+        
+        # СУЩЕСТВУЮЩИЕ ПАТТЕРНЫ (не трогаем для совместимости)
         # Убираем номера карт
-        text = re.sub(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b', '[CARD]', text)
+        text = re.sub(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b', '[MASKED_CARD]', text)
         
         # Убираем email адреса  
-        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', text)
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[MASKED_EMAIL]', text)
         
-        # Убираем номера телефонов
-        text = re.sub(r'\b\+?[1-9]\d{1,14}\b', '[PHONE]', text)
+        # УСИЛЕННЫЕ РОССИЙСКИЕ ПАТТЕРНЫ (v9.2)
         
-        # Убираем ИНН
-        text = re.sub(r'\b\d{10,12}\b', '[INN]', text)
+        # Российские мобильные телефоны (более точные паттерны)
+        text = re.sub(r'\+7[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b', '[MASKED_PHONE_RU]', text)
+        text = re.sub(r'8[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b', '[MASKED_PHONE_RU]', text)
+        
+        # Остальные телефоны (общий паттерн, но после российских)
+        text = re.sub(r'\b\+?[1-9]\d{1,14}\b', '[MASKED_PHONE]', text)
+        
+        # СНИЛС (XXX-XXX-XXX XX)
+        text = re.sub(r'\b\d{3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{2}\b', '[MASKED_SNILS]', text)
+        
+        # ИНН (10-12 цифр подряд) - более точный паттерн
+        text = re.sub(r'\b\d{10}\b|\b\d{12}\b', '[MASKED_INN]', text)
+        
+        # ФИО паттерны (Фамилия Имя Отчество)
+        # Осторожно: только явные паттерны чтобы не замаскировать нормальный текст
+        text = re.sub(r'\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+ич\b', '[MASKED_FIO]', text)
+        text = re.sub(r'\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+на\b', '[MASKED_FIO]', text)
+        
+        # Паспортные данные (серия номер)
+        text = re.sub(r'\b\d{4}\s?\d{6}\b', '[MASKED_PASSPORT]', text)
+        
+        # Даты рождения (ДД.ММ.ГГГГ)
+        text = re.sub(r'\b\d{1,2}\.\d{1,2}\.\d{4}\b', '[MASKED_DATE]', text)
         
         return text
+    
+    @staticmethod
+    def sanitize_resume_text(text: str) -> str:
+        """
+        Специальная санитизация для резюме (больше PII данных)
+        Используется ПЕРЕД логированием резюме
+        """
+        if not text:
+            return text
+        
+        # Сначала применяем общую санитизацию
+        sanitized_text = InputValidator.sanitize_for_logging(text)
+        
+        # Дополнительные паттерны специально для резюме
+        
+        # Адреса (осторожно, только явные паттерны)
+        sanitized_text = re.sub(r'г\.\s*[А-ЯЁ][а-яё]+,\s*ул\.\s*[А-ЯЁ][а-яё\s,]+\d+', '[MASKED_ADDRESS]', sanitized_text)
+        sanitized_text = re.sub(r'[А-ЯЁ][а-яё]+,\s*[А-ЯЁ][а-яё\s]+,\s*\d+', '[MASKED_ADDRESS]', sanitized_text)
+        
+        # Номера документов (различные форматы)
+        sanitized_text = re.sub(r'№\s*\d+', '[MASKED_DOC_NUMBER]', sanitized_text)
+        
+        # Водительские права
+        sanitized_text = re.sub(r'\b\d{2}\s?\d{2}\s?\d{6}\b', '[MASKED_LICENSE]', sanitized_text)
+        
+        return sanitized_text
 
 
 class ValidationMiddleware:
