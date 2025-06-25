@@ -136,9 +136,9 @@ async def get_user_consent_status(user_id: int) -> Optional[dict]:
             logger.warning("Supabase client not available for consent check")
             return None
             
-        result = client.table('user_sessions').select(
+        result = client.table('users').select(
             'consent_given, consent_timestamp, consent_version, marketing_consent'
-        ).eq('user_id', user_id).execute()
+        ).eq('id', user_id).execute()
         
         if result.data:
             consent_data = result.data[0]
@@ -172,12 +172,12 @@ async def save_user_consent(user_id: int, consent_version: str = 'v1.0', marketi
             return False
             
         # Обновляем или создаем запись согласия
-        result = client.table('user_sessions').update({
+        result = client.table('users').update({
             'consent_given': True,
             'consent_timestamp': 'now()',
             'consent_version': consent_version,
             'marketing_consent': marketing_consent
-        }).eq('user_id', user_id).execute()
+        }).eq('id', user_id).execute()
         
         if result.data:
             logger.info(f"✅ Consent saved for user {user_id}, version {consent_version}")
@@ -208,10 +208,10 @@ async def revoke_user_consent(user_id: int) -> bool:
             return False
             
         # Помечаем согласие как отозванное (НЕ удаляем пользователя полностью)
-        result = client.table('user_sessions').update({
+        result = client.table('users').update({
             'consent_given': False,
             'consent_timestamp': 'now()'  # Время отзыва
-        }).eq('user_id', user_id).execute()
+        }).eq('id', user_id).execute()
         
         if result.data:
             logger.info(f"✅ Consent revoked for user {user_id}")
@@ -279,8 +279,8 @@ async def migrate_existing_users_consent() -> dict:
             return {'error': 'Database not available'}
             
         # Находим пользователей без согласия
-        users_without_consent = client.table('user_sessions').select(
-            'user_id'
+        users_without_consent = client.table('users').select(
+            'id'
         ).is_('consent_given', 'null').execute()
         
         if not users_without_consent.data:
@@ -288,7 +288,7 @@ async def migrate_existing_users_consent() -> dict:
             return {'migrated': 0, 'already_migrated': 0}
             
         # Проставляем implied consent
-        migration_result = client.table('user_sessions').update({
+        migration_result = client.table('users').update({
             'consent_given': True,
             'consent_timestamp': 'now()',
             'consent_version': 'v1.0',

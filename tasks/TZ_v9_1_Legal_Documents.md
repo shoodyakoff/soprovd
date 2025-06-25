@@ -121,21 +121,21 @@
 
 1. **Создать миграцию migrate_v9_1_add_consent_fields.sql:**
    ```sql
-   -- Добавить поля согласия в user_sessions
-   ALTER TABLE user_sessions ADD COLUMN consent_given BOOLEAN DEFAULT NULL;
-   ALTER TABLE user_sessions ADD COLUMN consent_timestamp TIMESTAMP DEFAULT NULL;
-   ALTER TABLE user_sessions ADD COLUMN consent_version VARCHAR(10) DEFAULT 'v1.0';
-   ALTER TABLE user_sessions ADD COLUMN marketing_consent BOOLEAN DEFAULT FALSE;
+   -- Добавить поля согласия в users (НЕ user_sessions!)
+   ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT NULL;
+   ALTER TABLE users ADD COLUMN consent_timestamp TIMESTAMP DEFAULT NULL;
+   ALTER TABLE users ADD COLUMN consent_version VARCHAR(10) DEFAULT 'v1.0';
+   ALTER TABLE users ADD COLUMN marketing_consent BOOLEAN DEFAULT FALSE;
    
    -- Проставить согласие существующим пользователям (implied consent)
-   UPDATE user_sessions 
+   UPDATE users 
    SET consent_given = TRUE, 
        consent_timestamp = NOW(), 
        consent_version = 'v1.0'
-   WHERE user_id IS NOT NULL;
+   WHERE id IS NOT NULL;
    
    -- Индекс для быстрого поиска
-   CREATE INDEX idx_user_sessions_consent ON user_sessions(consent_given, consent_timestamp);
+   CREATE INDEX idx_users_consent ON users(consent_given, consent_timestamp);
    ```
 
 2. **Функции в utils/database.py:**
