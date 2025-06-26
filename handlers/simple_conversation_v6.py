@@ -298,15 +298,26 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if context.user_data is not None:
         user_id = context.user_data.get('analytics_user_id')
     
+    logger.info(f"🔍 RAILWAY DEBUG: Checking consent for user_id: {user_id}")
+    
     # Проверяем флаг согласия в БД
     consent_given = False
     if user_id:
         try:
+            logger.info(f"🔍 RAILWAY DEBUG: Calling get_user_consent_status...")
             consent_status = await get_user_consent_status(user_id)
+            logger.info(f"🔍 RAILWAY DEBUG: consent_status result: {consent_status}")
             if consent_status and consent_status.get('consent_given'):
                 consent_given = True
+                logger.info(f"🔍 RAILWAY DEBUG: consent_given = True")
+            else:
+                logger.info(f"🔍 RAILWAY DEBUG: consent_given = False")
         except Exception as e:
             logger.error(f"❌ Error checking consent status: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
+    
+    logger.info(f"🔍 RAILWAY DEBUG: Final consent_given: {consent_given}")
     
     # Формируем текст в зависимости от статуса согласия
     if consent_given:
@@ -338,8 +349,10 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 🔒 <b>Ваши данные НЕ сохраняются после генерации письма</b>"""
         )
     
+    logger.info(f"🔍 RAILWAY DEBUG: Sending message and returning WAITING_RESUME")
     await update.message.reply_text(message_text, parse_mode='HTML')
     
+    logger.info(f"🔍 RAILWAY DEBUG: handle_vacancy completed successfully, returning WAITING_RESUME")
     return WAITING_RESUME
 
 
@@ -395,7 +408,7 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
     
     if context.user_data:
-        vacancy_text = context.user_data.get('vacancy', '')
+        vacancy_text = context.user_data.get('vacancy_text', '')
         asyncio.create_task(
             _process_and_respond(
                 update, 
@@ -409,6 +422,37 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
 
     return WAITING_FEEDBACK
+
+def _is_error_response(generated_letter: str) -> bool:
+    """Проверяет, является ли ответ от Claude ошибкой или запросом дополнительной информации"""
+    if not generated_letter:
+        return True
+    
+    # Ключевые фразы, указывающие на ошибку или запрос информации
+    error_indicators = [
+        "не вижу в предоставленных входных данных",
+        "отсутствует описание вакансии",
+        "мне нужно:",
+        "предоставьте, пожалуйста",
+        "чтобы создать действительно эффективное",
+        "извините, но я не вижу",
+        "у меня есть только",
+        "необходимо предоставить"
+    ]
+    
+    generated_lower = generated_letter.lower()
+    
+    # Проверяем наличие ключевых фраз ошибок
+    for indicator in error_indicators:
+        if indicator.lower() in generated_lower:
+            return True
+    
+    # Дополнительная проверка: если письмо слишком короткое и содержит вопросы
+    if len(generated_letter) < 200 and ('?' in generated_letter or 'нужно' in generated_lower):
+        return True
+    
+    return False
+
 
 async def _process_and_respond(
     update: Update, 
@@ -463,7 +507,8 @@ async def _process_and_respond(
         
         await processing_msg.delete()
 
-        is_generation_successful = bool(generated_letter)
+        # Проверяем качество ответа - не только наличие текста, но и отсутствие ошибок
+        is_generation_successful = bool(generated_letter) and not _is_error_response(generated_letter)
 
         if is_generation_successful:
             await update.effective_user.send_message(
@@ -477,6 +522,12 @@ async def _process_and_respond(
                 'status': 'completed'
             })
         else:
+            # Для ошибочных ответов показываем сам ответ Claude (с объяснением проблемы)
+            if generated_letter:
+                await update.effective_user.send_message(
+                    f"⚠️ <b>ВНИМАНИЕ:</b>\n\n{generated_letter}",
+                    parse_mode='HTML'
+                )
             await analytics.update_letter_session(session_id, {'status': 'failed'})
 
         iteration_status = await feedback_service.get_session_iteration_status(session_id)
