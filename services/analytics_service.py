@@ -308,32 +308,40 @@ class AnalyticsService:
     # ===================================================
     
     async def get_or_create_subscription(self, user_id: int) -> Optional[dict]:
-        """Получить или создать подписку пользователя"""
+        """Получить или создать подписку пользователя (исправлена для v9.10)"""
         def _get_or_create():
             try:
                 if not self.supabase:
+                    logger.error(f"❌ No Supabase client for user {user_id}")
                     return None
                     
                 # Пытаемся найти существующую подписку
                 response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
                 
                 if response.data:
+                    logger.info(f"✅ Found existing subscription for user {user_id}")
                     return response.data[0]
                 
                 # Создаем новую подписку
+                logger.info(f"🔄 Creating new subscription for user {user_id}")
                 subscription_data = SubscriptionData(user_id=user_id)
                 response = self.supabase.table('subscriptions').insert(subscription_data.to_dict()).execute()
                 
                 if response.data:
+                    logger.info(f"✅ Successfully created subscription for user {user_id}")
                     return response.data[0]
+                else:
+                    logger.error(f"❌ Failed to create subscription - no data returned for user {user_id}")
                     
                 return None
                 
             except Exception as e:
-                logger.error(f"Failed to get/create subscription: {e}")
+                logger.error(f"❌ Exception in get_or_create_subscription for user {user_id}: {e}")
                 return None
         
         result = await self._execute_async(_get_or_create)
+        if not result:
+            logger.error(f"❌ CRITICAL: get_or_create_subscription failed for user {user_id}")
         return result
     
     async def update_subscription(self, user_id: int, updates: dict) -> bool:

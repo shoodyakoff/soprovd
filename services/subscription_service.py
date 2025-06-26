@@ -18,8 +18,13 @@ class SubscriptionService:
         self.enabled = SUBSCRIPTIONS_ENABLED and SupabaseClient.is_available()
     
     def _parse_period_end_safely(self, period_end) -> date:
-        """Безопасно парсит дату окончания периода"""
+        """Безопасно парсит дату окончания периода (исправлено для v9.10)"""
         try:
+            # Обрабатываем случай None (новые подписки без установленного period_end)
+            if period_end is None:
+                logger.info("period_end is None, returning yesterday to trigger reset")
+                return date.today() - timedelta(days=1)
+            
             if isinstance(period_end, str):
                 # Убираем различные timezone маркеры
                 clean_date = period_end.replace('Z', '').replace('+00:00', '').replace('T', ' ')
@@ -38,11 +43,16 @@ class SubscriptionService:
             # Возвращаем вчерашнюю дату чтобы сбросить лимиты
             return date.today() - timedelta(days=1)
         
-    async def check_user_limits(self, user_id: int) -> Dict[str, Any]:
+    async def check_user_limits(self, user_id: int, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Проверить лимиты пользователя:
         - FREE: 3 письма в месяц
         - PREMIUM: 20 писем в день
+        
+        Args:
+            user_id: ID пользователя
+            force_refresh: Принудительно перечитать данные из БД (для исправления проблемы 2)
+            
         Возвращает: {
             'can_generate': bool,
             'letters_used': int,
@@ -55,6 +65,9 @@ class SubscriptionService:
         if not self.enabled:
             # Если подписки выключены - даем Free план вместо unlimited
             return self._free_access_fallback()
+        
+        if force_refresh:
+            logger.info(f"🔄 Force refreshing limits for user {user_id}")
         
         try:
             if not self.supabase:

@@ -152,19 +152,6 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     start_param=start_param
                 )
     
-    # Проверяем лимиты пользователя
-    if user_id:
-        limits = await subscription_service.check_user_limits(user_id)
-        limit_message = subscription_service.format_limit_message(limits)
-        
-        if not limits['can_generate']:
-            # Пользователь исчерпал лимит
-            if update.callback_query:
-                await update.callback_query.edit_message_text(text=limit_message, parse_mode='HTML')
-            elif update.message:
-                await update.message.reply_text(text=limit_message, parse_mode='HTML')
-            return ConversationHandler.END
-    
     # Персональное приветствие с учетом времени
     user_name = ""
     if user and user.first_name:
@@ -214,7 +201,12 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Добавляем информацию о подписке и лимитах
     if user_id:
-        limits = await subscription_service.check_user_limits(user_id)
+        # Убеждаемся что подписка существует (исправление проблемы 3)
+        subscription = await analytics.get_or_create_subscription(user_id)
+        if not subscription:
+            logger.error(f"❌ Critical: Failed to create subscription for user {user_id}")
+        
+        limits = await subscription_service.check_user_limits(user_id, force_refresh=True)
         subscription_info = subscription_service.format_subscription_info(limits)
         message += f"\n{subscription_info}\n"
     
@@ -1717,47 +1709,13 @@ GPT-4o + Claude-3.5 работают вместе
 
 
 async def handle_unlock_limits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик кнопки 'Разблокировать лимиты'"""
-    query = update.callback_query
-    if not query:
-        return
-    
-    await query.answer("Разблокируем лимиты...")
-    
-    user = update.effective_user
-    user_id = None
-    if user:
-        user_id = await analytics.get_user_id(user.id)
-        if user_id:
-            await analytics.track_premium_button_clicked(user_id, 'unlock_limits', 'iteration')
-            await analytics.track_contact_initiated(user_id)
-    
-    await query.edit_message_text(
-        "<b>Разблокировать лимиты</b>\n\n"
-        "<b>Premium дает:</b>\n"
-        "20 писем в день вместо 3 в месяц\n"
-        "GPT-4o + Claude-3.5 работают вместе\n"
-        "Больше откликов = больше шансов на работу\n\n"
-        "<b>199 рублей/месяц</b>\n\n"
-        "Написать @shoodyakoff для подключения",
-        parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Получить Premium", callback_data="premium_inquiry")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_bot")]
-        ])
-    )
+    """Показываем полный Premium экран (упрощенная логика v9.10)"""
+    await handle_premium_info(update, context)
 
 
 async def handle_back_to_premium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик кнопки 'Назад' к premium info"""
-    query = update.callback_query
-    if not query:
-        return
-    
-    await query.answer("Возвращаемся...")
-    
-    # Возвращаемся к основной информации о Premium
-    await handle_premium_info(update, context)
+    """Возврат к боту (упрощенная логика v9.10)"""
+    await handle_back_to_bot(update, context)
 
 
  
