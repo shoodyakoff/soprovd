@@ -16,7 +16,7 @@ from services.acquisition_service import acquisition_service
 from models.analytics_models import UserData, LetterSessionData
 from models.feedback_models import LetterFeedbackData, LetterIterationImprovement
 from utils.validators import InputValidator, ValidationMiddleware
-from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard
+from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard, get_premium_info_keyboard, get_post_generation_keyboard, get_limit_reached_keyboard, get_iteration_upsell_keyboard
 from utils.database import check_user_needs_consent, save_user_consent
 from utils.rate_limiter import rate_limit, rate_limiter
 from config import RATE_LIMITING_ENABLED, ADMIN_TELEGRAM_IDS
@@ -508,14 +508,22 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "🍀 <i>Ваша оценка поможет улучшить качество писем!</i>"
             )
             
-            # Показываем кнопки оценки
+            # SOFT SELL TOUCHPOINT - показываем premium предложение после генерации
             if session_id and iteration_status:
-                keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration)
-                logger.info(f"✅ RAILWAY DEBUG: Кнопки оценки созданы для session_id: {session_id}")
+                keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration)
+                logger.info(f"✅ RAILWAY DEBUG: Premium кнопки созданы для session_id: {session_id}")
+                
+                # Трекаем показ premium предложения
+                if user_id:
+                    await analytics.track_premium_offer_shown(user_id, 'post_generation')
             elif session_id:
                 # Fallback: создаем кнопки с дефолтными значениями если нет iteration_status
-                keyboard = get_feedback_keyboard(session_id, 1)
-                logger.warning(f"⚠️ RAILWAY DEBUG: Использован fallback для кнопок оценки, session_id: {session_id}")
+                keyboard = get_post_generation_keyboard(session_id, 1)
+                logger.warning(f"⚠️ RAILWAY DEBUG: Использован fallback для premium кнопок, session_id: {session_id}")
+                
+                # Трекаем показ premium предложения
+                if user_id:
+                    await analytics.track_premium_offer_shown(user_id, 'post_generation')
             else:
                 keyboard = None
                 logger.error(f"❌ RAILWAY DEBUG: Не могу создать кнопки оценки - нет session_id!")
@@ -694,8 +702,12 @@ async def handle_feedback_button(update: Update, context: ContextTypes.DEFAULT_T
             "💡 <b>Что будем делать?</b>"
         )
     
-    # Показываем кнопки действий
-    keyboard = get_iteration_keyboard(session_id, iteration_status.remaining_iterations)
+    # UPSELL TOUCHPOINT - показываем premium предложение при повторных запросах
+    keyboard = get_iteration_upsell_keyboard(session_id, iteration_status.remaining_iterations)
+    
+    # Трекаем показ premium предложения
+    if user_id:
+        await analytics.track_premium_offer_shown(user_id, 'iteration')
     
     await query.edit_message_text(
         response_text,
@@ -889,7 +901,12 @@ async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_
                 "🍀 <i>Ваша оценка поможет улучшить качество писем!</i>"
             )
             
-            keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration if iteration_status else 1)
+            # SOFT SELL TOUCHPOINT - после retry генерации
+        keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration if iteration_status else 1)
+        
+        # Трекаем показ premium предложения
+        if user_id:
+            await analytics.track_premium_offer_shown(user_id, 'post_generation')
         else:
             # Неуспешная генерация
             feedback_message = f"❌ <b>Не удалось создать письмо</b>\n\n"
@@ -1062,8 +1079,14 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
                 "💡 <b>Оцените новую версию:</b>\n"
                 "• ❤️ Нравится - отлично!\n"
                 "• 👎 Не подходит - попробуем еще раз\n\n"
+                "⭐ <b>Premium:</b> неограниченные улучшения + лучшее качество\n\n"
             )
-            keyboard = get_feedback_keyboard(session_id, iteration_status.current_iteration)
+            # SOFT SELL TOUCHPOINT - после улучшения
+            keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration)
+            
+            # Трекаем показ premium предложения
+            if user_id:
+                await analytics.track_premium_offer_shown(user_id, 'post_generation')
         else:
             feedback_message += "✅ Используйте это письмо или создайте новое"
             keyboard = get_final_letter_keyboard()
@@ -1425,6 +1448,8 @@ def get_command_handlers():
         CommandHandler("help", help_command),
         CommandHandler("about", about_command),
         CommandHandler("support", support_command),
+        # PREMIUM команда v9.3
+        CommandHandler("premium", premium_command),
         # СКРЫТЫЕ команды (НЕ отображаются в меню)
         CommandHandler("privacy", privacy_command),
         CommandHandler("terms", terms_command),
@@ -1432,6 +1457,12 @@ def get_command_handlers():
         CallbackQueryHandler(handle_start_work_callback, pattern=r'^start_work$'),
         # Обработчик кнопки "Вернуться к боту"
         CallbackQueryHandler(handle_back_to_bot, pattern=r'^back_to_bot$'),
+        # PREMIUM CALLBACK HANDLERS v9.3
+        CallbackQueryHandler(handle_premium_inquiry, pattern=r'^premium_inquiry$'),
+        CallbackQueryHandler(handle_contact_support, pattern=r'^contact_support$'),
+        CallbackQueryHandler(handle_premium_info, pattern=r'^premium_info$'),
+        CallbackQueryHandler(handle_unlock_limits, pattern=r'^unlock_limits$'),
+        CallbackQueryHandler(handle_back_to_premium, pattern=r'^back_to_premium$'),
         # Обработчик текстовых сообщений вне активной сессии (должен быть последним!)
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_outside_session)
     ]
@@ -1505,7 +1536,7 @@ async def handle_message_outside_session(update: Update, context: ContextTypes.D
             limit_info = f"\n{subscription_info}"
             
             if not limits['can_generate']:
-                limit_info += f"⚠️ Лимит исчерпан - обратитесь в поддержку: /support"
+                limit_info += f"\n🚫 <b>Лимит бесплатных писем исчерпан</b> ({limits['used']}/{limits['limit']})\n💎 Premium дает неограниченные генерации + лучшее качество"
         except Exception as e:
             logger.error(f"Error checking limits in outside session: {e}")
     
@@ -1524,8 +1555,25 @@ async def handle_message_outside_session(update: Update, context: ContextTypes.D
 🚀 <b>Готовы создать письмо, которое заметят?</b>
 """
     
-    # Создаем клавиатуру с кнопкой начала работы
-    keyboard = get_start_work_keyboard()
+    # Создаем клавиатуру - показываем premium кнопки если лимит исчерпан
+    if context.user_data and context.user_data.get('analytics_user_id'):
+        user_id = context.user_data['analytics_user_id']
+        try:
+            limits = await subscription_service.check_user_limits(user_id)
+            if not limits['can_generate']:
+                # ГЛАВНЫЙ TOUCHPOINT - при исчерпании лимита
+                from utils.keyboards import get_limit_reached_keyboard
+                keyboard = get_limit_reached_keyboard()
+                
+                # Трекаем показ premium предложения
+                await analytics.track_premium_offer_shown(user_id, 'limit_reached')
+            else:
+                keyboard = get_start_work_keyboard()
+        except Exception as e:
+            logger.error(f"Error checking limits for keyboard: {e}")
+            keyboard = get_start_work_keyboard()
+    else:
+        keyboard = get_start_work_keyboard()
     
     await update.message.reply_text(
         response_message,
@@ -1727,6 +1775,222 @@ async def handle_back_to_bot(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "💡 Нажмите /start чтобы начать",
         parse_mode='HTML'
     )
+
+
+# ============================================================================
+# MONETIZATION HANDLERS v9.3
+# ============================================================================
+
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /premium - информация о Premium подписке"""
+    if not update.message:
+        return
+    
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            await analytics.track_premium_info_viewed(user_id, source='command')
+    
+    premium_text = """
+💎 <b>PREMIUM ПОДПИСКА</b>
+
+<b>🆓 FREE vs 💎 PREMIUM</b>
+
+<b>📊 Лимиты генераций:</b>
+🆓 Free: 3 письма в месяц
+💎 Premium: Неограниченно
+
+<b>🤖 AI модели:</b>
+🆓 Free: GPT-4o
+💎 Premium: GPT-4o + Claude-3.5 (лучшее качество)
+
+<b>⚡ Скорость обработки:</b>
+🆓 Free: Обычная очередь
+💎 Premium: Приоритетная обработка
+
+<b>🔄 Улучшения:</b>
+🆓 Free: 3 итерации на письмо
+💎 Premium: Неограниченные улучшения
+
+<b>📞 Поддержка:</b>
+🆓 Free: Общий чат
+💎 Premium: Персональная поддержка
+
+<b>💰 Стоимость:</b>
+Уточняйте у @shoodyakoff
+
+<b>🎯 Готовы перейти на Premium?</b>
+Свяжитесь с нами для оформления подписки!
+"""
+    
+    keyboard = get_premium_info_keyboard()
+    
+    await update.message.reply_text(
+        premium_text,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+async def handle_premium_inquiry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Получить Premium'"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Переходим к оформлению Premium...")
+    
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            await analytics.track_premium_button_clicked(user_id, 'premium_inquiry', 'button')
+            await analytics.track_contact_initiated(user_id)
+    
+    await query.edit_message_text(
+        "💎 <b>ОФОРМЛЕНИЕ PREMIUM ПОДПИСКИ</b>\n\n"
+        "📞 <b>Для оформления Premium подписки:</b>\n\n"
+        "1️⃣ Напишите в Telegram: @shoodyakoff\n"
+        "2️⃣ Укажите что хотите Premium подписку\n"
+        "3️⃣ Мы обсудим условия и стоимость\n"
+        "4️⃣ После оплаты активируем Premium\n\n"
+        "⚡ <b>Активация в течение 1 часа!</b>\n\n"
+        "💬 <b>Напишите прямо сейчас:</b> @shoodyakoff",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+        ])
+    )
+
+
+async def handle_contact_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Связаться с нами'"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Переходим к контактам...")
+    
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            await analytics.track_premium_button_clicked(user_id, 'contact_support', 'button')
+            await analytics.track_contact_initiated(user_id)
+    
+    await query.edit_message_text(
+        "📞 <b>СВЯЗАТЬСЯ С НАМИ</b>\n\n"
+        "💬 <b>Telegram:</b> @shoodyakoff\n\n"
+        "📝 <b>О чем можно написать:</b>\n"
+        "• Premium подписка\n"
+        "• Технические вопросы\n"
+        "• Предложения по улучшению\n"
+        "• Сотрудничество\n\n"
+        "⚡ <b>Отвечаем в течение 2-4 часов</b>",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+        ])
+    )
+
+
+async def handle_premium_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Узнать больше о Premium'"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Показываем информацию о Premium...")
+    
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            await analytics.track_premium_button_clicked(user_id, 'premium_info', 'post_generation')
+            await analytics.track_premium_info_viewed(user_id, source='button')
+    
+    premium_info = """
+⭐ <b>УЗНАЙТЕ БОЛЬШЕ О PREMIUM</b>
+
+<b>🚀 Почему Premium?</b>
+
+<b>🎯 Качество результата:</b>
+• Использование двух AI: GPT-4o + Claude-3.5
+• Более точный анализ вакансий
+• Персонализированные письма
+
+<b>💪 Больше возможностей:</b>
+• Неограниченные генерации
+• Неограниченные улучшения
+• Приоритетная обработка
+
+<b>📈 Результативность:</b>
+• На 40% больше откликов от HR
+• Более высокий процент приглашений
+• Профессиональный стиль письма
+
+<b>💎 Стоимость Premium:</b>
+Узнайте актуальные цены у @shoodyakoff
+"""
+    
+    keyboard = get_premium_info_keyboard()
+    
+    await query.edit_message_text(
+        premium_info,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+
+async def handle_unlock_limits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Разблокировать лимиты'"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Разблокируем лимиты...")
+    
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            await analytics.track_premium_button_clicked(user_id, 'unlock_limits', 'iteration')
+            await analytics.track_contact_initiated(user_id)
+    
+    await query.edit_message_text(
+        "🔓 <b>РАЗБЛОКИРОВКА ЛИМИТОВ</b>\n\n"
+        "💎 <b>Premium подписка дает:</b>\n\n"
+        "🔄 Неограниченные генерации писем\n"
+        "⚡ Неограниченные улучшения\n"
+        "🤖 Доступ к лучшим AI моделям\n"
+        "🚀 Приоритетная обработка\n\n"
+        "💰 <b>Оформить Premium:</b>\n"
+        "Напишите @shoodyakoff для получения подписки\n\n"
+        "⏱️ <b>Активация в течение 1 часа!</b>",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 Получить Premium", callback_data="premium_inquiry")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_bot")]
+        ])
+    )
+
+
+async def handle_back_to_premium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Назад' к premium info"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Возвращаемся...")
+    
+    # Возвращаемся к основной информации о Premium
+    await handle_premium_info(update, context)
 
 
  

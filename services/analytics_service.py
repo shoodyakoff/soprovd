@@ -449,7 +449,64 @@ class AnalyticsService:
                 return 0
         
         result = await self._execute_async(_get_count)
-        return result or 0
+        return result if result is not None else 0
+
+    # ===================================================
+    # MONETIZATION TRACKING v9.3
+    # ===================================================
+    
+    async def track_premium_offer_shown(self, user_id: int, touchpoint_location: str, 
+                                      user_generation_count: int = 0, session_duration: int = 0) -> bool:
+        """Отследить показ premium предложения"""
+        logger.info(f"💰 Трекаю premium_offer_shown: user_id={user_id}, location={touchpoint_location}")
+        event = EventData(
+            user_id=user_id,
+            event_type='premium_offer_shown',
+            event_data={
+                'touchpoint_location': touchpoint_location,
+                'user_generation_count': user_generation_count,
+                'session_duration': session_duration
+            }
+        )
+        return await self.track_event(event)
+    
+    async def track_premium_button_clicked(self, user_id: int, button_type: str, 
+                                         touchpoint_location: str) -> bool:
+        """Отследить клик на premium кнопку"""
+        logger.info(f"💰 Трекаю premium_button_clicked: user_id={user_id}, button={button_type}, location={touchpoint_location}")
+        event = EventData(
+            user_id=user_id,
+            event_type='premium_button_clicked',
+            event_data={
+                'button_type': button_type,
+                'touchpoint_location': touchpoint_location
+            }
+        )
+        return await self.track_event(event)
+    
+    async def track_contact_initiated(self, user_id: int, contact_method: str = 'telegram') -> bool:
+        """Отследить инициирование контакта с поддержкой"""
+        logger.info(f"💰 Трекаю contact_initiated: user_id={user_id}, method={contact_method}")
+        event = EventData(
+            user_id=user_id,
+            event_type='contact_initiated',
+            event_data={
+                'contact_method': contact_method
+            }
+        )
+        return await self.track_event(event)
+    
+    async def track_premium_info_viewed(self, user_id: int, source: str = 'command') -> bool:
+        """Отследить просмотр информации о premium"""
+        logger.info(f"💰 Трекаю premium_info_viewed: user_id={user_id}, source={source}")
+        event = EventData(
+            user_id=user_id,
+            event_type='premium_info_viewed',
+            event_data={
+                'source': source
+            }
+        )
+        return await self.track_event(event)
 
 # Глобальный экземпляр сервиса
 analytics = AnalyticsService() 
