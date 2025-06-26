@@ -961,7 +961,13 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
     if not update.message or not update.message.text or not context.user_data or not update.message.from_user:
         return WAITING_IMPROVEMENT_REQUEST
 
-    user_id = update.message.from_user.id
+    # Получаем internal_user_id из context, а не telegram_user_id из update
+    user_id = context.user_data.get('analytics_user_id')
+    if not user_id:
+        logger.error("❌ No analytics_user_id in context for improvement request")
+        await update.message.reply_text("❌ Ошибка авторизации. Начните заново: /start")
+        return ConversationHandler.END
+        
     session_id = context.user_data.get('improvement_session_id')
     improvement_request = update.message.text
     
