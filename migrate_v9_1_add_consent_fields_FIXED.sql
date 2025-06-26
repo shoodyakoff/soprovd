@@ -13,6 +13,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_timestamp TIMESTAMP DEFAULT N
 ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version VARCHAR(10) DEFAULT 'v1.0';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_consent BOOLEAN DEFAULT FALSE;
 
+-- Удаляем неиспользуемое поле total_generations (заменено системой подписок)
+ALTER TABLE users DROP COLUMN IF EXISTS total_generations;
+
 -- Проставляем согласие существующим пользователям (implied consent)
 -- Логика: если пользователь уже генерировал письма, значит он фактически согласился
 UPDATE users 
@@ -48,6 +51,7 @@ COMMENT ON COLUMN users.marketing_consent IS 'Согласие на маркет
 -- ALTER TABLE users DROP COLUMN IF EXISTS consent_version;
 -- ALTER TABLE users DROP COLUMN IF EXISTS consent_timestamp;
 -- ALTER TABLE users DROP COLUMN IF EXISTS consent_given;
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS total_generations INTEGER DEFAULT 0;
 
 -- ========================================
 -- ПРОВЕРКА МИГРАЦИИ

@@ -18,12 +18,17 @@ CREATE TABLE IF NOT EXISTS users (
     language_code VARCHAR(10),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    total_generations INTEGER DEFAULT 0
+    consent_given BOOLEAN DEFAULT NULL,
+    consent_timestamp TIMESTAMP DEFAULT NULL,
+    consent_version VARCHAR(10) DEFAULT 'v1.0',
+    marketing_consent BOOLEAN DEFAULT FALSE
 );
 
 -- Индексы для users
 CREATE INDEX idx_users_telegram_id ON users(telegram_user_id);
 CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_users_consent ON users(consent_given, consent_timestamp);
+CREATE INDEX idx_users_consent_version ON users(consent_version, consent_timestamp);
 
 -- ===================================================
 -- 2. ТАБЛИЦА СЕССИЙ ГЕНЕРАЦИИ ПИСЕМ v6.0

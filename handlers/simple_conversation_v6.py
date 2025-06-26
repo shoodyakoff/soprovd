@@ -17,7 +17,7 @@ from models.analytics_models import UserData, LetterSessionData
 from models.feedback_models import LetterFeedbackData, LetterIterationImprovement
 from utils.validators import InputValidator, ValidationMiddleware
 from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard, get_premium_info_keyboard, get_post_generation_keyboard, get_limit_reached_keyboard, get_iteration_upsell_keyboard
-from utils.database import check_user_needs_consent, save_user_consent
+from utils.database import save_user_consent, get_user_consent_status
 from utils.rate_limiter import rate_limit, rate_limiter
 from config import RATE_LIMITING_ENABLED, ADMIN_TELEGRAM_IDS
 
@@ -302,18 +302,53 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         logger.error(f"❌ RAILWAY DEBUG: context.user_data is None!")
     
-    await update.message.reply_text(
-        "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
-        "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
-        "📝 <b>Что отправить:</b>\n"
-        "• Полный текст резюме\n"
-        "• Можно скопировать с HeadHunter, Хабр Карьера\n"
-        "• Или из Word/PDF файла\n"
-        "• Включите опыт работы и навыки\n\n"
-        "💡 <i>Совет: Чем подробнее резюме, тем лучше письмо!</i>\n\n"
-        "🔒 <i>Конфиденциально: данные не сохраняются</i>",
-        parse_mode='HTML'
-    )
+    # Проверяем согласие пользователя для показа соответствующего текста
+    user_id = None
+    if context.user_data is not None:
+        user_id = context.user_data.get('analytics_user_id')
+    
+    # Проверяем флаг согласия в БД
+    consent_given = False
+    if user_id:
+        try:
+            consent_status = await get_user_consent_status(user_id)
+            if consent_status and consent_status.get('consent_given'):
+                consent_given = True
+        except Exception as e:
+            logger.error(f"❌ Error checking consent status: {e}")
+    
+    # Формируем текст в зависимости от статуса согласия
+    if consent_given:
+        # Обычный текст для пользователей с согласием
+        message_text = (
+            "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
+            "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
+            "📝 <b>Что отправить:</b>\n"
+            "• Полный текст резюме\n"
+            "• Можно скопировать с HeadHunter, Хабр Карьера\n"
+            "• Или из Word/PDF файла\n"
+            "• Включите опыт работы и навыки\n\n"
+            "💡 <i>Совет: Чем подробнее резюме, тем лучше письмо!</i>\n\n"
+            "🔒 <i>Конфиденциально: данные не сохраняются</i>"
+        )
+    else:
+        # Текст с согласием для новых пользователей
+        message_text = (
+            "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
+            "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
+            "📝 <b>Что отправить:</b>\n"
+            "• Полный текст резюме\n"
+            "• Можно скопировать с HeadHunter, Хабр Карьера\n"
+            "• Или из Word/PDF файла\n"
+            "• Включите опыт работы и навыки\n\n"
+            "💡 <i>Совет: Чем подробнее резюме, тем лучше письмо!</i>\n\n"
+            "💡 <b>Продолжая работу с ботом, вы соглашаетесь с:</b>\n"
+            "• 📄 Политика конфиденциальности: https://clck.ru/3Mnzwf\n"
+            "• 📋 Пользовательское соглашение: https://clck.ru/3MnztY\n\n"
+            "🔒 <b>Ваши данные НЕ сохраняются после генерации письма</b>"
+        )
+    
+    await update.message.reply_text(message_text, parse_mode='HTML')
     
     return WAITING_RESUME
 
@@ -335,58 +370,26 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return WAITING_RESUME
     
     # ========================================
-    # ПРОВЕРКА СОГЛАСИЯ НА ОБРАБОТКУ ПД (ФЗ-152)
+    # СОХРАНЕНИЕ СОГЛАСИЯ НА ОБРАБОТКУ ПД (ФЗ-152)
     # ========================================
     user_id = None
     if context.user_data is not None:
         user_id = context.user_data.get('analytics_user_id')
     
+    # Фиксируем согласие при отправке резюме (неявное согласие)
     if user_id:
         try:
-            needs_consent = await check_user_needs_consent(user_id)
-            
-            if needs_consent:
-                # Пользователю нужно согласие - показываем форму согласия
-                logger.info(f"🔒 User {user_id} needs consent - showing consent form")
-                
-                # Сохраняем резюме в контексте для продолжения после согласия
-                if context.user_data is not None:
-                    context.user_data['pending_resume_text'] = resume_text
-                
-                consent_message = (
-                    "🔒 <b>Согласие на обработку персональных данных</b>\n\n"
-                    "Для генерации персонализированного письма нужно согласие на обработку данных резюме согласно ФЗ-152.\n\n"
-                    "📋 <b>Что мы обрабатываем:</b>\n"
-                    "• Текст вашего резюме (только для анализа)\n"
-                    "• Информацию о вакансии\n\n"
-                    "🔐 <b>Гарантии безопасности:</b>\n"
-                    "• Данные НЕ сохраняются после генерации\n"
-                    "• Обработка происходит в реальном времени\n"
-                    "• Полная конфиденциальность\n\n"
-                    "📄 <b>Документы:</b>\n"
-                    "• Telegram: /privacy и /terms\n"
-                    "• 🌐 Notion: https://www.notion.so/21d47215317a8035a55ac5432dc8476c\n\n"
-                    "Продолжить генерацию письма?"
-                )
-                
-                # Создаем кнопки согласия
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Согласен и продолжить", callback_data=f"consent_agree_{user_id}")],
-                    [InlineKeyboardButton("❌ Отказаться", callback_data=f"consent_decline_{user_id}")],
-                    [InlineKeyboardButton("📄 Политика конфиденциальности", callback_data="show_privacy")]
-                ])
-                
-                await update.message.reply_text(
-                    consent_message,
-                    parse_mode='HTML',
-                    reply_markup=keyboard
-                )
-                
-                # Возвращаем специальное состояние ожидания согласия
-                return WAITING_RESUME  # Остаемся в том же состоянии, но ждем callback
-                
+            # Проверяем, нужно ли сохранить согласие
+            consent_status = await get_user_consent_status(user_id)
+            if not consent_status or not consent_status.get('consent_given'):
+                # Сохраняем согласие при первой отправке резюме
+                consent_saved = await save_user_consent(user_id, consent_version='v1.0', marketing_consent=False)
+                if consent_saved:
+                    logger.info(f"✅ Implicit consent saved for user {user_id}")
+                else:
+                    logger.error(f"❌ Failed to save consent for user {user_id}")
         except Exception as e:
-            logger.error(f"❌ Error checking consent for user {user_id}: {e}")
+            logger.error(f"❌ Error saving consent for user {user_id}: {e}")
             # В случае ошибки продолжаем без проверки согласия
             pass
     
@@ -1079,7 +1082,7 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
                 "💡 <b>Оцените новую версию:</b>\n"
                 "• ❤️ Нравится - отлично!\n"
                 "• 👎 Не подходит - попробуем еще раз\n\n"
-                "⭐ <b>Premium:</b> неограниченные улучшения + лучшее качество\n\n"
+                "⭐ <b>Premium:</b> 20 писем в день + лучшее качество\n\n"
             )
             # SOFT SELL TOUCHPOINT - после улучшения
             keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration)
@@ -1161,237 +1164,9 @@ async def handle_waiting_feedback_message(update: Update, context: ContextTypes.
 
 
 # ========================================
-# ОБРАБОТЧИКИ СОГЛАСИЯ НА ОБРАБОТКУ ПД
+# ОБРАБОТЧИКИ СОГЛАСИЯ НА ОБРАБОТКУ ПД - УДАЛЕНЫ
+# Теперь используется неявное согласие через действие
 # ========================================
-
-async def handle_consent_agree(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обработка согласия пользователя на обработку ПД"""
-    query = update.callback_query
-    if not query:
-        return WAITING_RESUME
-    
-    await query.answer("✅ Согласие получено!")
-    
-    # Извлекаем user_id из callback_data
-    try:
-        if not query.data:
-            return WAITING_RESUME
-        user_id = int(query.data.split('_')[-1])
-        logger.info(f"✅ User {user_id} agreed to consent")
-        
-        # Сохраняем согласие в базе данных
-        consent_saved = await save_user_consent(user_id, consent_version='v1.0', marketing_consent=False)
-        
-        if consent_saved:
-            logger.info(f"✅ Consent saved for user {user_id}")
-        else:
-            logger.error(f"❌ Failed to save consent for user {user_id}")
-        
-        # Получаем сохраненное резюме из контекста
-        resume_text = None
-        if context.user_data:
-            resume_text = context.user_data.get('pending_resume_text')
-        
-        if resume_text:
-            # Продолжаем обработку резюме
-            await query.edit_message_text(
-                "✅ <b>Согласие получено!</b>\n\n"
-                "🚀 Теперь отправьте ваше резюме еще раз для генерации письма:",
-                parse_mode='HTML'
-            )
-            
-            # Очищаем pending резюме - пользователь отправит резюме заново
-            if context.user_data:
-                context.user_data.pop('pending_resume_text', None)
-            
-            return WAITING_RESUME
-        else:
-            await query.edit_message_text(
-                "✅ <b>Согласие получено!</b>\n\n"
-                "❌ Резюме потеряно. Отправьте его еще раз:",
-                parse_mode='HTML'
-            )
-            return WAITING_RESUME
-            
-    except Exception as e:
-        logger.error(f"❌ Error processing consent agreement: {e}")
-        await query.edit_message_text(
-            "❌ <b>Ошибка при обработке согласия</b>\n\n"
-            "Попробуйте еще раз или начните заново: /start",
-            parse_mode='HTML'
-        )
-        return ConversationHandler.END
-
-
-async def handle_consent_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обработка отказа от согласия"""
-    query = update.callback_query
-    if not query:
-        return WAITING_RESUME
-    
-    await query.answer("Понимаем ваше решение")
-    
-    try:
-        if not query.data:
-            return WAITING_RESUME
-        user_id = int(query.data.split('_')[-1])
-        logger.info(f"❌ User {user_id} declined consent")
-        
-        await query.edit_message_text(
-            "❌ <b>Согласие не дано</b>\n\n"
-            "Понимаем! Без согласия мы не можем обработать ваше резюме согласно требованиям ФЗ-152.\n\n"
-            "🔄 <b>Если передумаете:</b>\n"
-            "Возвращайтесь в любое время - мы всегда готовы помочь! 😊\n\n"
-            "🆕 <b>Создать новое письмо:</b> /start",
-            parse_mode='HTML'
-        )
-        
-        # Очищаем pending данные
-        if context.user_data:
-            context.user_data.pop('pending_resume_text', None)
-        
-        return ConversationHandler.END
-        
-    except Exception as e:
-        logger.error(f"❌ Error processing consent decline: {e}")
-        return ConversationHandler.END
-
-
-async def handle_show_privacy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Показать политику конфиденциальности"""
-    query = update.callback_query
-    if not query:
-        return WAITING_RESUME
-    
-    await query.answer("Открываю политику конфиденциальности...")
-    
-    try:
-        # Читаем политику конфиденциальности из файла
-        with open('docs/legal/privacy_policy.md', 'r', encoding='utf-8') as f:
-            privacy_content = f.read()
-        
-        # Убираем markdown заголовки для более читаемого вида в Telegram
-        privacy_text = privacy_content.replace('# ', '').replace('## ', '').replace('### ', '')
-        
-        # Telegram лимит 4096 символов - разбиваем на части
-        max_length = 4000  # Оставляем место для кнопок
-        
-        if len(privacy_text) <= max_length:
-            # Текст помещается в одно сообщение
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("◀️ Вернуться к согласию", callback_data="back_to_consent")]
-            ])
-            
-            await query.edit_message_text(
-                f"📄 <b>ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ</b>\n\n{privacy_text}",
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-        else:
-            # Разбиваем на части
-            parts = []
-            current_part = ""
-            
-            for line in privacy_text.split('\n'):
-                if len(current_part + line + '\n') <= max_length:
-                    current_part += line + '\n'
-                else:
-                    if current_part:
-                        parts.append(current_part.strip())
-                    current_part = line + '\n'
-            
-            if current_part:
-                parts.append(current_part.strip())
-            
-            # Отправляем первую часть
-            if parts:
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Вернуться к согласию", callback_data="back_to_consent")]
-                ])
-                
-                await query.edit_message_text(
-                    f"📄 <b>ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ</b>\n<i>(часть 1 из {len(parts)})</i>\n\n{parts[0]}",
-                    parse_mode='HTML',
-                    reply_markup=keyboard
-                )
-                
-                # Отправляем остальные части отдельными сообщениями
-                for i, part in enumerate(parts[1:], 2):
-                    if query.message:
-                        await query.message.reply_text(
-                            f"📄 <b>ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ</b>\n<i>(часть {i} из {len(parts)})</i>\n\n{part}",
-                            parse_mode='HTML'
-                        )
-        
-        return WAITING_RESUME
-        
-    except FileNotFoundError:
-        await query.edit_message_text(
-            "❌ <b>Политика конфиденциальности временно недоступна</b>\n\n"
-            "Обратитесь в поддержку: /support",
-            parse_mode='HTML'
-        )
-        return WAITING_RESUME
-    except Exception as e:
-        logger.error(f"❌ Error showing privacy policy: {e}")
-        await query.edit_message_text(
-            "❌ <b>Ошибка при загрузке политики</b>\n\n"
-            "Попробуйте позже или обратитесь в поддержку: /support",
-            parse_mode='HTML'
-        )
-        return WAITING_RESUME
-
-
-async def handle_back_to_consent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Вернуться к форме согласия из политики конфиденциальности"""
-    query = update.callback_query
-    if not query:
-        return WAITING_RESUME
-    
-    await query.answer("Возвращаемся к согласию...")
-    
-    # Получаем user_id из контекста
-    user_id = None
-    if context.user_data:
-        user_id = context.user_data.get('analytics_user_id')
-    
-    if not user_id:
-        await query.edit_message_text(
-            "❌ <b>Ошибка</b>\n\n"
-            "Начните заново: /start",
-            parse_mode='HTML'
-        )
-        return ConversationHandler.END
-    
-    # Показываем форму согласия заново
-    consent_message = (
-        "🔒 <b>Согласие на обработку персональных данных</b>\n\n"
-        "Для генерации персонализированного письма нужно согласие на обработку данных резюме согласно ФЗ-152.\n\n"
-        "📋 <b>Что мы обрабатываем:</b>\n"
-        "• Текст вашего резюме (только для анализа)\n"
-        "• Информацию о вакансии\n\n"
-        "🔐 <b>Гарантии безопасности:</b>\n"
-        "• Данные НЕ сохраняются после генерации\n"
-        "• Обработка происходит в реальном времени\n"
-        "• Полная конфиденциальность\n\n"
-        "📄 Подробности: /privacy\n\n"
-        "Продолжить генерацию письма?"
-    )
-    
-    # Создаем кнопки согласия
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Согласен и продолжить", callback_data=f"consent_agree_{user_id}")],
-        [InlineKeyboardButton("❌ Отказаться", callback_data=f"consent_decline_{user_id}")],
-        [InlineKeyboardButton("📄 Политика конфиденциальности", callback_data="show_privacy")]
-    ])
-    
-    await query.edit_message_text(
-        consent_message,
-        parse_mode='HTML',
-        reply_markup=keyboard
-    )
-    
-    return WAITING_RESUME
 
 
 def get_conversation_handler():
@@ -1408,12 +1183,7 @@ def get_conversation_handler():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vacancy)
             ],
             WAITING_RESUME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume),
-                # Обработчики кнопок согласия
-                CallbackQueryHandler(handle_consent_agree, pattern=r'^consent_agree_'),
-                CallbackQueryHandler(handle_consent_decline, pattern=r'^consent_decline_'),
-                CallbackQueryHandler(handle_show_privacy, pattern=r'^show_privacy$'),
-                CallbackQueryHandler(handle_back_to_consent, pattern=r'^back_to_consent$')
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_resume)
             ],
             WAITING_IMPROVEMENT_REQUEST: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_improvement_request)
@@ -1536,7 +1306,7 @@ async def handle_message_outside_session(update: Update, context: ContextTypes.D
             limit_info = f"\n{subscription_info}"
             
             if not limits['can_generate']:
-                limit_info += f"\n🚫 <b>Лимит бесплатных писем исчерпан</b> ({limits['used']}/{limits['limit']})\n💎 Premium дает неограниченные генерации + лучшее качество"
+                limit_info += f"\n🚫 <b>Лимит бесплатных писем исчерпан</b> ({limits['used']}/{limits['limit']})\n💎 Premium дает 20 писем в день + лучшее качество"
         except Exception as e:
             logger.error(f"Error checking limits in outside session: {e}")
     
@@ -1794,35 +1564,27 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await analytics.track_premium_info_viewed(user_id, source='command')
     
     premium_text = """
-💎 <b>PREMIUM ПОДПИСКА</b>
+⭐ <b>УЗНАЙТЕ БОЛЬШЕ О PREMIUM</b>
 
-<b>🆓 FREE vs 💎 PREMIUM</b>
+<b>🚀 Почему Premium?</b>
 
-<b>📊 Лимиты генераций:</b>
-🆓 Free: 3 письма в месяц
-💎 Premium: Неограниченно
+<b>🎯 Качество результата:</b>
+• Использование двух AI: GPT-4o + Claude-3.5
+• Более точный анализ вакансий
+• Персонализированные письма
 
-<b>🤖 AI модели:</b>
-🆓 Free: GPT-4o
-💎 Premium: GPT-4o + Claude-3.5 (лучшее качество)
+<b>💪 Больше возможностей:</b>
+• 20 писем в день (вместо 3 в месяц)
+• Приоритетная обработка
+• Персональная поддержка
 
-<b>⚡ Скорость обработки:</b>
-🆓 Free: Обычная очередь
-💎 Premium: Приоритетная обработка
+<b>📈 Результативность:</b>
+• На 40% больше откликов от HR
+• Более высокий процент приглашений
+• Профессиональный стиль письма
 
-<b>🔄 Улучшения:</b>
-🆓 Free: 3 итерации на письмо
-💎 Premium: Неограниченные улучшения
-
-<b>📞 Поддержка:</b>
-🆓 Free: Общий чат
-💎 Premium: Персональная поддержка
-
-<b>💰 Стоимость:</b>
-Уточняйте у @shoodyakoff
-
-<b>🎯 Готовы перейти на Premium?</b>
-Свяжитесь с нами для оформления подписки!
+<b>💎 Стоимость Premium:</b>
+400 рублей/месяц
 """
     
     keyboard = get_premium_info_keyboard()
@@ -1855,7 +1617,7 @@ async def handle_premium_inquiry(update: Update, context: ContextTypes.DEFAULT_T
         "📞 <b>Для оформления Premium подписки:</b>\n\n"
         "1️⃣ Напишите в Telegram: @shoodyakoff\n"
         "2️⃣ Укажите что хотите Premium подписку\n"
-        "3️⃣ Мы обсудим условия и стоимость\n"
+        "3️⃣ Оплатите подписку\n"
         "4️⃣ После оплаты активируем Premium\n\n"
         "⚡ <b>Активация в течение 1 часа!</b>\n\n"
         "💬 <b>Напишите прямо сейчас:</b> @shoodyakoff",
@@ -1925,9 +1687,9 @@ async def handle_premium_info(update: Update, context: ContextTypes.DEFAULT_TYPE
 • Персонализированные письма
 
 <b>💪 Больше возможностей:</b>
-• Неограниченные генерации
-• Неограниченные улучшения
+• 20 писем в день (вместо 3 в месяц)
 • Приоритетная обработка
+• Персональная поддержка
 
 <b>📈 Результативность:</b>
 • На 40% больше откликов от HR
@@ -1935,7 +1697,7 @@ async def handle_premium_info(update: Update, context: ContextTypes.DEFAULT_TYPE
 • Профессиональный стиль письма
 
 <b>💎 Стоимость Premium:</b>
-Узнайте актуальные цены у @shoodyakoff
+400 рублей/месяц
 """
     
     keyboard = get_premium_info_keyboard()
@@ -1966,10 +1728,11 @@ async def handle_unlock_limits(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text(
         "🔓 <b>РАЗБЛОКИРОВКА ЛИМИТОВ</b>\n\n"
         "💎 <b>Premium подписка дает:</b>\n\n"
-        "🔄 Неограниченные генерации писем\n"
-        "⚡ Неограниченные улучшения\n"
+        "🔄 20 писем в день (вместо 3 в месяц)\n"
+        "⚡ Приоритетная обработка\n"
         "🤖 Доступ к лучшим AI моделям\n"
-        "🚀 Приоритетная обработка\n\n"
+        "🚀 Персональная поддержка\n\n"
+        "💰 <b>Стоимость: 400 рублей/месяц</b>\n\n"
         "💰 <b>Оформить Premium:</b>\n"
         "Напишите @shoodyakoff для получения подписки\n\n"
         "⏱️ <b>Активация в течение 1 часа!</b>",
