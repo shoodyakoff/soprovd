@@ -1808,8 +1808,9 @@ async def handle_unlock_limits(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_back_to_premium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Возврат к боту (упрощенная логика v9.10)"""
-    await handle_back_to_bot(update, context)
+    """Возврат к экрану Premium информации (исправленная логика v9.11)"""
+    # Просто возвращаемся к экрану Premium информации
+    await handle_premium_info(update, context)
 
 
  
