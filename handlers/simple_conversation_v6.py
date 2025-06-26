@@ -122,12 +122,22 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Начало диалога v6.0"""
     logger.info("🚀 Начинаем диалог v6.0")
     
-    # Защита от двойных нажатий - очищаем данные
+    # Защита от двойных нажатий - сохраняем важные данные перед очисткой
+    saved_improvement_session_id = None
     if context.user_data is not None:
+        # Сохраняем ID сессии улучшения если есть
+        saved_improvement_session_id = context.user_data.get('improvement_session_id')
+        
         context.user_data.clear()
         # Устанавливаем флаги активной сессии и инициализации
         context.user_data['conversation_state'] = 'active'
         context.user_data['initialized'] = True  # ВСЕГДА устанавливаем для ConversationHandler
+        
+        # Восстанавливаем ID сессии улучшения если был, но БЕЗ активного режима
+        if saved_improvement_session_id:
+            context.user_data['improvement_session_id'] = saved_improvement_session_id
+            # НЕ восстанавливаем in_improvement_mode - пользователь начинает новую сессию
+            logger.info(f"🔄 Restored improvement_session_id: {saved_improvement_session_id} (without active mode)")
     
     # Трекаем пользователя и инициализируем
     user = update.effective_user
@@ -205,6 +215,9 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         subscription = await analytics.get_or_create_subscription(user_id)
         if not subscription:
             logger.error(f"❌ Critical: Failed to create subscription for user {user_id}")
+        
+        # ИСПРАВЛЕНИЕ: Принудительно сбрасываем лимиты если период истек
+        await subscription_service._check_and_reset_period(user_id)
         
         limits = await subscription_service.check_user_limits(user_id, force_refresh=True)
         subscription_info = subscription_service.format_subscription_info(limits)
@@ -573,6 +586,10 @@ async def _process_and_respond(
         if context.user_data:
             context.user_data['session_id_for_feedback'] = session_id
             context.user_data['session_id_for_improvement'] = session_id
+            # ИСПРАВЛЕНИЕ v9.10: Сохраняем session_id для возможности улучшения
+            if is_generation_successful:
+                context.user_data['improvement_session_id'] = session_id
+                logger.info(f"💾 Saved improvement_session_id: {session_id}")
 
     except Exception as e:
         logger.error(f"Ошибка в _process_and_respond: {e}", exc_info=True)
@@ -660,6 +677,11 @@ async def handle_feedback_button(update: Update, context: ContextTypes.DEFAULT_T
     )
     await feedback_service.save_feedback(feedback_data)
     
+    # ИСПРАВЛЕНИЕ v9.10: Сохраняем session_id для возможности улучшения
+    if context.user_data and iteration_status.can_iterate:
+        context.user_data['improvement_session_id'] = session_id
+        logger.info(f"💾 Saved improvement_session_id from feedback: {session_id}")
+    
     # Формируем ответ в зависимости от типа оценки
     if feedback_type == "like":
         response_text = (
@@ -738,6 +760,9 @@ async def handle_improve_letter(update: Update, context: ContextTypes.DEFAULT_TY
     # Сохраняем session_id для дальнейшей обработки
     if context.user_data:
         context.user_data['improvement_session_id'] = session_id
+        # ИСПРАВЛЕНИЕ v9.10: Устанавливаем флаг активного режима улучшения
+        context.user_data['in_improvement_mode'] = True
+        logger.info(f"🔄 Entered improvement mode for session {session_id}")
         
         # Восстанавливаем данные из сессии если их нет в context
         if not context.user_data.get('vacancy_text') or not context.user_data.get('resume_text'):
@@ -1105,6 +1130,11 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
             parse_mode='HTML',
             reply_markup=keyboard
         )
+        
+        # ИСПРАВЛЕНИЕ v9.10: Очищаем флаг активного режима улучшения после завершения
+        if context.user_data:
+            context.user_data.pop('in_improvement_mode', None)
+            logger.info("🔄 Cleared in_improvement_mode flag after improvement completion")
         
     except Exception as e:
         logger.error(f"❌ Ошибка улучшения письма: {e}")
@@ -1546,13 +1576,71 @@ async def terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def handle_back_to_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик кнопки 'Вернуться к боту'"""
+    """Обработчик кнопки 'Вернуться к боту' (исправленная логика v9.11)"""
     query = update.callback_query
     if not query:
         return
     
     await query.answer("Возвращаемся к боту...")
     
+    in_improvement_mode = context.user_data.get('in_improvement_mode') if context.user_data else False
+    improvement_session_id = context.user_data.get('improvement_session_id') if context.user_data else None
+    
+    # СЛУЧАЙ 1: Активный режим улучшения
+    if in_improvement_mode and improvement_session_id:
+        # Возвращаемся к экрану улучшения письма
+        from services.feedback_service import feedback_service
+        
+        try:
+            iteration_status = await feedback_service.get_session_iteration_status(improvement_session_id)
+            if iteration_status and iteration_status.can_iterate:
+                await query.edit_message_text(
+                    """🔄 <b>ПОНЯЛ. ДАВАЙ СДЕЛАЕМ ЕГО ИДЕАЛЬНЫМ.</b>
+
+Что именно поправить? Чем конкретнее, тем лучше.
+
+<b>Например:</b>
+- "Больше про мой опыт с Python"
+- "Сделай тон более официальным"
+- "Убери упоминание про фриланс"
+
+✍️ *Напиши свои пожелания одним сообщением...*""",
+                    parse_mode='HTML'
+                )
+                logger.info(f"🔄 Returned to improvement screen for session {improvement_session_id}")
+                return
+        except Exception as e:
+            logger.error(f"Error returning to improvement screen: {e}")
+    
+    # СЛУЧАЙ 2: Есть активная сессия письма (НО НЕ в режиме улучшения)
+    if improvement_session_id:
+        # Возвращаемся к экрану с кнопками оценки письма
+        from services.feedback_service import feedback_service
+        
+        try:
+            iteration_status = await feedback_service.get_session_iteration_status(improvement_session_id)
+            if iteration_status:
+                feedback_message = f"""❤️ <b>Спасибо за оценку!</b>
+
+🙏 Мы ценим ваш отзыв! Это помогает нам создавать лучшие письма.
+
+🔄 <b>У вас есть ещё {iteration_status.remaining_iterations} итерации правок</b> для этой пары вакансия-резюме, или можете создать новое письмо для другой вакансии.
+
+💡 <b>Что вы хотите сделать дальше?</b>"""
+                
+                keyboard = get_iteration_upsell_keyboard(improvement_session_id, iteration_status.remaining_iterations)
+                
+                await query.edit_message_text(
+                    feedback_message,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                logger.info(f"🔄 Returned to feedback screen for session {improvement_session_id}")
+                return
+        except Exception as e:
+            logger.error(f"Error returning to feedback screen: {e}")
+    
+    # СЛУЧАЙ 3: Обычный возврат к стартовому экрану
     await query.edit_message_text(
         "👋 <b>Добро пожаловать обратно!</b>\n\n"
         "🎯 <b>Готовы создать сопроводительное письмо?</b>\n\n"

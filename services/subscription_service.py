@@ -152,6 +152,36 @@ class SubscriptionService:
     
 
     
+    async def _check_and_reset_period(self, user_id: int) -> bool:
+        """Проверить и сбросить период если нужно (для исправления проблемы лимитов)"""
+        try:
+            if not self.supabase:
+                return False
+            
+            # Получаем подписку
+            response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
+            if not response.data:
+                return False
+            
+            subscription = response.data[0]
+            plan_type = subscription['plan_type']
+            period_end = subscription['period_end']
+            
+            # Проверяем, не истек ли период
+            today = date.today()
+            period_end_date = self._parse_period_end_safely(period_end)
+            
+            if today > period_end_date:
+                logger.info(f"🔄 Period expired for user {user_id}, resetting limits")
+                await self._reset_limits(user_id, plan_type)
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking period for user {user_id}: {e}")
+            return False
+
     async def _reset_limits(self, user_id: int, plan_type: str) -> bool:
         """Сбросить лимиты пользователя в зависимости от плана"""
         try:
