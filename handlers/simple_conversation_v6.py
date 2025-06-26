@@ -425,30 +425,41 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 def _is_error_response(generated_letter: str) -> bool:
     """Проверяет, является ли ответ от Claude ошибкой или запросом дополнительной информации"""
-    if not generated_letter:
+    if not generated_letter or len(generated_letter.strip()) < 50:
         return True
     
-    # Ключевые фразы, указывающие на ошибку или запрос информации
+    generated_lower = generated_letter.lower()
+    
+    # Прямые индикаторы ошибки (высокая точность)
     error_indicators = [
         "не вижу в предоставленных входных данных",
         "отсутствует описание вакансии",
         "мне нужно:",
         "предоставьте, пожалуйста",
-        "чтобы создать действительно эффективное",
         "извините, но я не вижу",
         "у меня есть только",
-        "необходимо предоставить"
+        "необходимо предоставить",
+        "чтобы создать действительно эффективное"
     ]
     
-    generated_lower = generated_letter.lower()
-    
-    # Проверяем наличие ключевых фраз ошибок
+    # Проверяем наличие прямых индикаторов ошибок
     for indicator in error_indicators:
         if indicator.lower() in generated_lower:
             return True
     
-    # Дополнительная проверка: если письмо слишком короткое и содержит вопросы
-    if len(generated_letter) < 200 and ('?' in generated_letter or 'нужно' in generated_lower):
+    # Улучшенная проверка: короткое сообщение с множественными вопросами
+    question_count = generated_letter.count('?')
+    if len(generated_letter) < 200 and question_count >= 2:
+        return True
+    
+    # Проверка на запрос дополнительной информации (более точная)
+    request_phrases = ['нужно', 'требуется', 'необходимо']
+    request_count = sum(1 for phrase in request_phrases if phrase in generated_lower)
+    if len(generated_letter) < 300 and request_count >= 2:
+        return True
+    
+    # Проверка на отсутствие структуры письма
+    if len(generated_letter) < 150 and not any(word in generated_lower for word in ['уважением', 'опыт', 'компания', 'позиция']):
         return True
     
     return False
@@ -736,15 +747,31 @@ async def handle_improve_letter(update: Update, context: ContextTypes.DEFAULT_TY
     if context.user_data:
         context.user_data['improvement_session_id'] = session_id
         
-        # Проверяем, что у нас есть необходимые данные для улучшения
+        # Восстанавливаем данные из сессии если их нет в context
         if not context.user_data.get('vacancy_text') or not context.user_data.get('resume_text'):
-            logger.error("❌ Missing vacancy_text or resume_text in context")
-            await query.edit_message_text(
-                "❌ <b>Недостаточно данных для улучшения</b>\n\n"
-                "Создайте новое письмо: /start",
-                parse_mode='HTML'
-            )
-            return ConversationHandler.END
+            logger.info("🔍 Восстанавливаем данные из сессии...")
+            try:
+                session_response = await analytics.get_letter_session_by_id(session_id)
+                if session_response:
+                    context.user_data['vacancy_text'] = session_response.get('job_description', '')
+                    context.user_data['resume_text'] = session_response.get('resume_text', '')
+                    logger.info("✅ Данные восстановлены из сессии")
+                else:
+                    logger.error("❌ Сессия не найдена в БД")
+                    await query.edit_message_text(
+                        "❌ <b>Сессия не найдена</b>\n\n"
+                        "Создайте новое письмо: /start",
+                        parse_mode='HTML'
+                    )
+                    return ConversationHandler.END
+            except Exception as e:
+                logger.error(f"❌ Ошибка восстановления данных: {e}")
+                await query.edit_message_text(
+                    "❌ <b>Ошибка восстановления данных</b>\n\n"
+                    "Создайте новое письмо: /start",
+                    parse_mode='HTML'
+                )
+                return ConversationHandler.END
     
     # НОВАЯ ЛОГИКА: показываем только текст БЕЗ кнопок
     prompt_text = feedback_service.get_improvement_prompt_text(iteration_status.remaining_iterations)

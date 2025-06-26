@@ -78,6 +78,16 @@ class InMemoryRateLimiter:
         max_requests = limit_config['rate']
         window_seconds = limit_config['window']
         
+        # Автоматическая очистка каждые 1000 запросов
+        if hasattr(self, '_cleanup_counter'):
+            self._cleanup_counter += 1
+        else:
+            self._cleanup_counter = 1
+            
+        if self._cleanup_counter % 1000 == 0:
+            logger.info(f"🧹 Auto-cleanup triggered at request #{self._cleanup_counter}")
+            self.cleanup_old_data()
+        
         # Ключ для хранения requests этого пользователя и действия
         key = f"{user_id}:{action_type}"
         current_time = time.time()

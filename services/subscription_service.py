@@ -16,6 +16,27 @@ class SubscriptionService:
     def __init__(self):
         self.supabase = SupabaseClient.get_client()
         self.enabled = SUBSCRIPTIONS_ENABLED and SupabaseClient.is_available()
+    
+    def _parse_period_end_safely(self, period_end) -> date:
+        """Безопасно парсит дату окончания периода"""
+        try:
+            if isinstance(period_end, str):
+                # Убираем различные timezone маркеры
+                clean_date = period_end.replace('Z', '').replace('+00:00', '').replace('T', ' ')
+                # Пробуем разные форматы
+                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                    try:
+                        return datetime.strptime(clean_date, fmt).date()
+                    except ValueError:
+                        continue
+                # Fallback на fromisoformat
+                return datetime.fromisoformat(clean_date.split('.')[0]).date()
+            else:
+                return period_end.date() if hasattr(period_end, 'date') else period_end
+        except (ValueError, AttributeError) as e:
+            logger.error(f"Error parsing period_end date: {period_end}, error: {e}")
+            # Возвращаем вчерашнюю дату чтобы сбросить лимиты
+            return date.today() - timedelta(days=1)
         
     async def check_user_limits(self, user_id: int) -> Dict[str, Any]:
         """
@@ -79,7 +100,7 @@ class SubscriptionService:
             
             # Проверяем, не истек ли период (дневной для premium, месячный для free)
             today = date.today()
-            period_end_date = datetime.fromisoformat(period_end.replace('Z', '+00:00')).date()
+            period_end_date = self._parse_period_end_safely(period_end)
             
             if today > period_end_date:
                 # Период истек - сбрасываем счетчик
@@ -157,7 +178,7 @@ class SubscriptionService:
     
     async def increment_usage(self, user_id: int) -> bool:
         """
-        Увеличить счетчик использованных писем
+        Увеличить счетчик использованных писем АТОМАРНО
         ТОЛЬКО для новых сессий, НЕ для итераций!
         """
         if not self.enabled:
@@ -167,34 +188,38 @@ class SubscriptionService:
             if not self.supabase:
                 return True
             
-            # Получаем текущее значение
-            response = self.supabase.table('subscriptions').select('letters_used').eq('user_id', user_id).execute()
-            if not response.data:
-                logger.info(f"No subscription found for user {user_id} during increment, using analytics method")
-                from services.analytics_service import analytics
-                subscription = await analytics.get_or_create_subscription(user_id)
-                if not subscription:
-                    logger.error(f"Failed to create subscription for increment for user {user_id}")
-                    return False
-                response = self.supabase.table('subscriptions').select('letters_used').eq('user_id', user_id).execute()
-                if not response.data:
-                    logger.error(f"Analytics subscription not found in increment for user {user_id}")
-                    return False
+            # Используем атомарную SQL функцию
+            response = self.supabase.rpc('increment_user_letters', {
+                'user_id_param': user_id
+            }).execute()
             
-            current_used = response.data[0]['letters_used']
-            new_used = current_used + 1
-            
-            # Увеличиваем счетчик
-            self.supabase.table('subscriptions').update({
-                'letters_used': new_used
-            }).eq('user_id', user_id).execute()
-            
-            logger.info(f"Letter usage incremented for user {user_id}: {current_used} -> {new_used}")
-            return True
+            if response.data and len(response.data) > 0:
+                result = response.data[0]
+                new_count = result['new_count']
+                can_generate = result['can_generate']
+                plan_type = result['plan_type']
+                
+                logger.info(f"✅ Letter usage incremented atomically for user {user_id}: count={new_count}, can_generate={can_generate}, plan={plan_type}")
+                return True
+            else:
+                logger.error(f"❌ No response from increment_user_letters for user {user_id}")
+                return False
             
         except Exception as e:
-            logger.error(f"Error incrementing usage: {e}")
-            return False
+            logger.error(f"❌ Error in atomic increment_usage for user {user_id}: {e}")
+            
+            # Fallback на старую логику только в крайнем случае
+            try:
+                logger.warning(f"⚠️ Falling back to old increment logic for user {user_id}")
+                from services.analytics_service import analytics
+                subscription = await analytics.get_or_create_subscription(user_id)
+                if subscription:
+                    await analytics.increment_letters_used(user_id)
+                    return True
+                return False
+            except Exception as fallback_e:
+                logger.error(f"❌ Fallback increment also failed for user {user_id}: {fallback_e}")
+                return False
     
     def format_limit_message(self, limits: Dict[str, Any]) -> str:
         """Форматировать сообщение о лимитах"""
