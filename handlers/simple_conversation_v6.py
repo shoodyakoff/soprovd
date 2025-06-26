@@ -388,9 +388,9 @@ async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     # Устанавливаем лимит итераций в зависимости от тарифа
     if limits and limits.get('plan_type') == 'premium':
-        max_iterations = 3
+        max_iterations = 3  # Premium: 1 основная + 2 итерации правок
     else:
-        max_iterations = 1 # Бесплатный тариф
+        max_iterations = 2  # Free: 1 основная + 1 итерация правок
 
     processing_msg = await update.message.reply_text(
         """🚀 <b>МАГИЯ НАЧАЛАСЬ!</b>
@@ -515,6 +515,8 @@ async def _process_and_respond(
                 f"✍️ <b>ПИСЬМО:</b>\n\n{generated_letter}",
                 parse_mode='HTML'
             )
+            # Увеличиваем счетчик использованных писем при успешной генерации
+            await subscription_service.increment_usage(user_id)
             await analytics.update_letter_session(session_id, {
                 'generated_letter': generated_letter[:2000],
                 'generated_letter_length': len(generated_letter),
@@ -912,7 +914,7 @@ async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_
         
         # Обновляем аналитику
         if is_generation_successful:
-            await subscription_service.increment_usage(user_id)
+            # НЕ увеличиваем счетчик - это повторная генерация, не новое письмо
             await analytics.update_letter_session(session_id, {
                 'generated_letter': letter[:2000],
                 'generated_letter_length': len(letter),
