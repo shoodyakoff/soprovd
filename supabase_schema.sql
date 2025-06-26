@@ -183,7 +183,7 @@ CREATE POLICY "Service role can do everything" ON openai_requests
 -- Таблица подписок пользователей
 CREATE TABLE IF NOT EXISTS subscriptions (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     plan_type VARCHAR(20) DEFAULT 'free' CHECK (plan_type IN ('free', 'premium')),
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'expired')),
     letters_limit INTEGER DEFAULT 3,
@@ -208,7 +208,7 @@ CREATE INDEX idx_subscriptions_status ON subscriptions(status);
 -- Таблица платежей
 CREATE TABLE IF NOT EXISTS payments (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     payment_id VARCHAR(100) UNIQUE NOT NULL, -- ID от платежной системы
     amount DECIMAL(10,2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'RUB',
@@ -229,7 +229,7 @@ CREATE INDEX idx_payments_payment_id ON payments(payment_id);
 CREATE TABLE IF NOT EXISTS letter_iterations (
     id SERIAL PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES letter_sessions(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     iteration_number INTEGER NOT NULL DEFAULT 1,
     user_feedback TEXT,
     improvement_request TEXT,
@@ -248,7 +248,7 @@ CREATE INDEX idx_iterations_number ON letter_iterations(iteration_number);
 CREATE TABLE IF NOT EXISTS letter_feedback (
     id SERIAL PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES letter_sessions(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     iteration_number INTEGER NOT NULL DEFAULT 1,
     -- Только лайки и дизлайки, БЕЗ комментариев
     feedback_type VARCHAR(20) CHECK (feedback_type IN ('like', 'dislike')),
@@ -265,7 +265,7 @@ CREATE INDEX idx_letter_feedback_created ON letter_feedback(created_at);
 -- Таблица каналов привлечения
 CREATE TABLE IF NOT EXISTS acquisition_channels (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
     utm_source VARCHAR(100),
     utm_medium VARCHAR(100),
     utm_campaign VARCHAR(100),
@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS acquisition_channels (
     landing_page VARCHAR(255),
     device_type VARCHAR(50),
     telegram_start_param VARCHAR(100),
-    referral_user_id INTEGER REFERENCES users(id),
+    referral_user_id BIGINT REFERENCES users(id),
     session_count INTEGER DEFAULT 0,
     first_session_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_session_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

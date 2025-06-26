@@ -206,12 +206,12 @@ class SubscriptionService:
             reset_text = "завтра" if limits['period_type'] == 'daily' else "в следующем месяце"
             
             return (
-                f"📊 <b>Лимит исчерпан!</b>\n\n"
-                f"📝 Использовано: {limits['letters_used']}/{limits['letters_limit']} писем {period_text}\n"
-                f"📅 План: {limits['plan_type'].title()}\n"
-                f"🕐 Лимит обновится {reset_text}\n\n"
-                f"💎 <b>Хотите больше писем?</b>\n"
-                f"Обратитесь в поддержку: /support"
+                f"<b>Лимит исчерпан!</b>\n\n"
+                f"Использовано: {limits['letters_used']}/{limits['letters_limit']} писем {period_text}\n"
+                f"План: {limits['plan_type'].title()}\n"
+                f"Лимит обновится {reset_text}\n\n"
+                f"<b>Premium:</b> 20 писем в день за 199₽/месяц\n"
+                f"Написать @shoodyakoff"
             )
         
         # Показываем остаток при малом количестве
@@ -219,8 +219,8 @@ class SubscriptionService:
         if remaining <= 5:
             period_text = "сегодня" if limits['period_type'] == 'daily' else "в этом месяце"
             return (
-                f"📊 <b>Остаток писем {period_text}: {remaining}</b>\n"
-                f"💡 Помните: правки письма не засчитываются в лимит"
+                f"<b>Остаток писем {period_text}: {remaining}</b>\n"
+                f"Правки письма не засчитываются в лимит"
             )
         
         return ""  # Не показываем сообщение при большом остатке
@@ -245,7 +245,7 @@ class SubscriptionService:
             emoji = "🟢"
         
         return (
-            f"💎 <b>Подписка:</b> {plan_name}\n"
+            f"<b>Подписка:</b> {plan_name}\n"
             f"{emoji} <b>Писем осталось {period_text}:</b> {limits['remaining']}/{limits['letters_limit']}\n"
         )
 

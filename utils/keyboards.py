@@ -91,8 +91,8 @@ def get_limit_reached_keyboard():
     """Клавиатура при исчерпании лимита - ГЛАВНЫЙ touchpoint"""
     keyboard = [
         [
-            InlineKeyboardButton("💎 Получить Premium", callback_data="premium_inquiry"),
-            InlineKeyboardButton("📞 Связаться с нами", callback_data="contact_support")
+            InlineKeyboardButton("Получить Premium", callback_data="premium_inquiry"),
+            InlineKeyboardButton("Связаться с нами", callback_data="contact_support")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -105,7 +105,7 @@ def get_post_generation_keyboard(session_id: str, iteration: int):
             InlineKeyboardButton("👎 Не подходит", callback_data=f"feedback_dislike_{session_id}_{iteration}")
         ],
         [
-            InlineKeyboardButton("⭐ Узнать больше о Premium", callback_data="premium_info")
+            InlineKeyboardButton("Узнать о Premium", callback_data="premium_info")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -119,11 +119,11 @@ def get_iteration_upsell_keyboard(session_id: str, remaining_iterations: int):
             InlineKeyboardButton("🔄 Улучшить письмо", callback_data=f"improve_letter_{session_id}")
         ])
         keyboard.append([
-            InlineKeyboardButton("🔓 Разблокировать лимиты", callback_data="unlock_limits")
+            InlineKeyboardButton("Разблокировать лимиты", callback_data="unlock_limits")
         ])
     else:
         keyboard.append([
-            InlineKeyboardButton("🔓 Разблокировать лимиты", callback_data="unlock_limits")
+            InlineKeyboardButton("Разблокировать лимиты", callback_data="unlock_limits")
         ])
     
     keyboard.append([
@@ -136,8 +136,8 @@ def get_premium_info_keyboard():
     """Клавиатура для детальной информации о Premium"""
     keyboard = [
         [
-            InlineKeyboardButton("💎 Получить Premium", callback_data="premium_inquiry"),
-            InlineKeyboardButton("📞 Связаться с нами", callback_data="contact_support")
+            InlineKeyboardButton("Получить Premium", callback_data="premium_inquiry"),
+            InlineKeyboardButton("Связаться с нами", callback_data="contact_support")
         ],
         [
             InlineKeyboardButton("◀️ Вернуться к боту", callback_data="back_to_bot")

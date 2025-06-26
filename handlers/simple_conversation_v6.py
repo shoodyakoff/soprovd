@@ -6,7 +6,7 @@ Simple Conversation Handler v7.2
 import logging
 import time
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message, CallbackQuery
 from telegram.ext import ContextTypes, ConversationHandler
 from services.smart_analyzer import generate_simple_letter, generate_improved_letter
 from services.analytics_service import analytics
@@ -20,6 +20,7 @@ from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_f
 from utils.database import save_user_consent, get_user_consent_status
 from utils.rate_limiter import rate_limit, rate_limiter
 from config import RATE_LIMITING_ENABLED, ADMIN_TELEGRAM_IDS
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -54,24 +55,22 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Показать справку по командам"""
     if update.message:
         await update.message.reply_text(
-            "📚 <b>СПРАВКА ПО КОМАНДАМ</b>\n\n"
-            "🎯 <b>/start</b> - Создать новое сопроводительное письмо\n"
-            "ℹ️ <b>/about</b> - О боте и его возможностях\n"
-            "📞 <b>/support</b> - Связаться с поддержкой\n"
-            "❌ <b>/cancel</b> - Отменить текущий процесс",
+            """🚀 <b>КАК ПОЛУЧИТЬ РАБОТУ БЫСТРЕЕ?</b>
+
+❌ <b>Проблема:</b> Шаблонные письма игнорируют.
+✅ <b>Решение:</b> Персональные письма получают ответы.
+
+🎯 <b>/start</b> - Создать письмо-магнит для HR.
+💎 <b>/premium</b> - Получить в 7 раз больше писем и лучшее качество.
+📞 <b>/support</b> - Связаться с создателями.
+
+⚡ <b>Процесс простой:</b>
+1. Скидываешь вакансию.
+2. Скидываешь резюме.
+3. Через 30 секунд получаешь письмо, которое цепляет.""",
             parse_mode='HTML'
         )
         
-        await update.message.reply_text(
-            "💡 <b>Как пользоваться:</b>\n"
-            "1️⃣ Нажмите /start\n"
-            "2️⃣ Отправьте текст вакансии\n"
-            "3️⃣ Отправьте ваше резюме\n"
-            "4️⃣ Получите готовое письмо!\n\n"
-            "⚡ Процесс займет всего 30-45 секунд",
-            parse_mode='HTML'
-        )
-
 
 @rate_limit('commands')
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -79,41 +78,43 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update.message:
         # Отправляем информацию частями для лучшего отображения
         await update.message.reply_text(
-            "🤖 <b>О БОТЕ СОПРОВОД</b>\n\n"
-            "🎯 <b>Миссия:</b> Помогать людям находить работу мечты\n\n"
-            "✨ <b>Возможности:</b>\n"
-            "• Анализ вакансий с помощью ИИ\n"
-            "• Персонализация под каждую позицию\n"
-            "• Профессиональный стиль письма\n"
-            "• Быстрая генерация (30-45 сек)",
+            """🤖 <b>СЕКРЕТ ПИСЕМ, КОТОРЫЕ ЧИТАЮТ ДО КОНЦА</b>
+
+❌ <b>99% соискателей пишут так:</b>
+"Здравствуйте! Меня заинтересовала ваша вакансия..."
+(HR засыпает на первой строчке)
+
+✅ <b>Мы пишем так:</b>
+"В вашей вакансии Junior разработчика меня зацепило требование знания Python. За последний год я как раз создал 3 проекта на этом стеке..."
+(HR читает дальше!)
+
+🔥 <b>ПОЧЕМУ ЭТО РАБОТАЕТ:</b>
+• Анализируем каждое слово вакансии.
+• Находим "крючки", важные для HR.
+• Подсвечиваем ваши сильные стороны и конкретику.
+• Работаем на GPT-4o + Claude-3.5 для максимального качества.
+
+🎯 <b>Ваш результат:</b> экономия 2 часов на каждом письме и больше приглашений на собеседования.""",
             parse_mode='HTML'
         )
         
-        await update.message.reply_text(
-            "🔒 <b>Конфиденциальность:</b>\n"
-            "• Ваши данные не сохраняются\n"
-            "• Обработка происходит в реальном времени\n"
-            "• Полная анонимность\n\n"
-            "📊 <b>Версия:</b> 6.0\n"
-            "🚀 <b>Создано с любовью для соискателей</b>\n\n"
-            "💌 Удачи в поиске работы!",
-            parse_mode='HTML'
-        )
-
 
 @rate_limit('commands')
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Контакты поддержки"""
     if update.message:
         await update.message.reply_text(
-            "📞 <b>ПОДДЕРЖКА И ОБРАТНАЯ СВЯЗЬ</b>\n\n"
-            "💬 <b>Есть вопросы или предложения?</b>\n"
-            "Напиши в tg @shoodyakoff",
+            """📞 <b>ЕСТЬ ВОПРОС? НУЖНА ПОМОЩЬ?</b>
+
+💎 Хотите подключить Premium?
+💡 Есть идея, как сделать бота лучше?
+🐛 Что-то пошло не так?
+
+✉️ <b>Пишите напрямую создателю:</b> @shoodyakoff
+
+⚡ Отвечаю быстро и помогаю решить любые вопросы. Каждое обращение делает бот лучше!""",
             parse_mode='HTML'
         )
-
-
-
 
 
 @rate_limit('commands')
@@ -186,27 +187,17 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not show_full_intro:
         # Полное сообщение для новых пользователей
         message = f"""
-{time_greeting}{user_name}! 🎯
+{time_greeting}, {user_name}! Устал от отказов и шаблонных писем?
 
-<b>Создадим сопроводительное письмо, которое заметят!</b>
+Я пишу сопроводительные, от которых HR не может оторваться. Я знаю, что работает, потому что проанализировал тысячи успешных кейсов.
 
-📋 <b>Что нужно для идеального письма:</b>
+<b>Что от тебя нужно:</b>
+1. Полный текст вакансии.
+2. Твоё резюме.
 
-<b>1️⃣ Подробное описание вакансии:</b>
-• Требования к кандидату
-• Обязанности и задачи  
-• Информация о компании
-• Условия работы
+Через 30 секунд у тебя будет письмо, которое выделит тебя среди сотен других.
 
-<b>2️⃣ Детальное резюме с:</b>
-• Конкретными достижениями и цифрами
-• Релевантным опытом работы
-• Ключевыми навыками
-• Образованием и сертификатами
-
-💡 <b>Совет:</b> Чем подробнее информация, тем точнее и убедительнее будет письмо!
-
-🚀 <b>Начнём с описания вакансии...</b>
+<b>Начнём с вакансии.</b> Просто скопируй текст с HeadHunter или сайта компании.
 """
         # Помечаем что показали полное объяснение
         if context.user_data is not None:
@@ -214,11 +205,11 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         # Сокращенное сообщение для повторных использований
         message = f"""
-{time_greeting}{user_name}! 🎯
+{time_greeting}, {user_name}! Снова за дело?
 
-<b>Создаем новое сопроводительное письмо</b>
+Давай напишем еще одно письмо, которое принесет тебе приглашение на собеседование.
 
-🚀 <b>Начнём с описания вакансии...</b>
+<b>Начнём с вакансии.</b> Просто скопируй текст.
 """
     
     # Добавляем информацию о подписке и лимитах
@@ -321,31 +312,30 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if consent_given:
         # Обычный текст для пользователей с согласием
         message_text = (
-            "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
-            "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
-            "📝 <b>Что отправить:</b>\n"
-            "• Полный текст резюме\n"
-            "• Можно скопировать с HeadHunter, Хабр Карьера\n"
-            "• Или из Word/PDF файла\n"
-            "• Включите опыт работы и навыки\n\n"
-            "💡 <i>Совет: Чем подробнее резюме, тем лучше письмо!</i>\n\n"
-            "🔒 <i>Конфиденциально: данные не сохраняются</i>"
+            """✅ <b>Отлично! Вакансию изучил.</b>
+
+Уже вижу, на какие ключевые требования HR нужно сделать акцент в письме.
+
+<b>Шаг 2 из 2:</b> Теперь скинь своё резюме.
+
+Можно просто скопировать текст с HeadHunter или из файла. Чем больше деталей, тем точнее "выстрелим" в сердце работодателя."""
         )
     else:
         # Текст с согласием для новых пользователей
         message_text = (
-            "✅ <b>Отлично! Вакансия сохранена</b>\n\n"
-            "📋 <b>Шаг 2/3:</b> Теперь отправьте ваше резюме\n\n"
-            "📝 <b>Что отправить:</b>\n"
-            "• Полный текст резюме\n"
-            "• Можно скопировать с HeadHunter, Хабр Карьера\n"
-            "• Или из Word/PDF файла\n"
-            "• Включите опыт работы и навыки\n\n"
-            "💡 <i>Совет: Чем подробнее резюме, тем лучше письмо!</i>\n\n"
-            "💡 <b>Продолжая работу с ботом, вы соглашаетесь с:</b>\n"
-            "• 📄 Политика конфиденциальности: https://clck.ru/3Mnzwf\n"
-            "• 📋 Пользовательское соглашение: https://clck.ru/3MnztY\n\n"
-            "🔒 <b>Ваши данные НЕ сохраняются после генерации письма</b>"
+            """✅ <b>Отлично! Вакансию изучил.</b>
+
+Уже вижу, на какие ключевые требования HR нужно сделать акцент в письме.
+
+<b>Шаг 2 из 2:</b> Теперь скинь своё резюме.
+
+Можно просто скопировать текст с HeadHunter или из файла. Чем больше деталей, тем точнее "выстрелим" в сердце работодателя.
+
+💡 <b>Продолжая работу с ботом, вы соглашаетесь с:</b>
+• 📄 Политика конфиденциальности: https://clck.ru/3Mnzwf
+• 📋 Пользовательское соглашение: https://clck.ru/3MnztY
+
+🔒 <b>Ваши данные НЕ сохраняются после генерации письма</b>"""
         )
     
     await update.message.reply_text(message_text, parse_mode='HTML')
@@ -357,266 +347,189 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 @ValidationMiddleware.require_initialization
 @ValidationMiddleware.require_text_message
 async def handle_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обработка резюме и генерация письма"""
-    if not update.message or not update.message.text:
+    """Обработка резюме и запуск генерации письма"""
+    if not update.message or not update.message.text or not update.message.from_user:
         return WAITING_RESUME
-        
-    resume_text = update.message.text.strip()
+
+    telegram_user_id = update.message.from_user.id
+    resume_text = update.message.text
     
-    # Валидация текста резюме
+    # Проверка длины резюме
     is_valid, error_msg = InputValidator.validate_resume_text(resume_text)
     if not is_valid:
         await update.message.reply_text(error_msg, parse_mode='HTML')
         return WAITING_RESUME
-    
-    # ========================================
-    # СОХРАНЕНИЕ СОГЛАСИЯ НА ОБРАБОТКУ ПД (ФЗ-152)
-    # ========================================
-    user_id = None
+
     if context.user_data is not None:
-        user_id = context.user_data.get('analytics_user_id')
+        context.user_data['resume'] = resume_text
+
+    # Получаем внутренний user_id для проверки лимитов
+    analytics_user_id = context.user_data.get('analytics_user_id') if context.user_data else None
+    if not analytics_user_id:
+        logger.error(f"❌ No analytics_user_id found for telegram_user {telegram_user_id}")
+        await update.message.reply_text("❌ Ошибка: не удалось определить пользователя. Попробуйте /start")
+        return WAITING_RESUME
+
+    # Получаем лимиты пользователя, чтобы определить max_iterations
+    limits = await subscription_service.check_user_limits(analytics_user_id)
     
-    # Фиксируем согласие при отправке резюме (неявное согласие)
-    if user_id:
-        try:
-            # Проверяем, нужно ли сохранить согласие
-            consent_status = await get_user_consent_status(user_id)
-            if not consent_status or not consent_status.get('consent_given'):
-                # Сохраняем согласие при первой отправке резюме
-                consent_saved = await save_user_consent(user_id, consent_version='v1.0', marketing_consent=False)
-                if consent_saved:
-                    logger.info(f"✅ Implicit consent saved for user {user_id}")
-                else:
-                    logger.error(f"❌ Failed to save consent for user {user_id}")
-        except Exception as e:
-            logger.error(f"❌ Error saving consent for user {user_id}: {e}")
-            # В случае ошибки продолжаем без проверки согласия
-            pass
-    
-    # Получаем вакансию и сохраняем резюме
-    vacancy_text = None
-    if context.user_data is not None:
-        vacancy_text = context.user_data.get('vacancy_text')
-        context.user_data['resume_text'] = resume_text  # Сохраняем резюме для итераций
-    
-    if not vacancy_text:
-        await update.message.reply_text("❌ Вакансия потеряна. Начните заново: /start")
-        return ConversationHandler.END
-    
-    # Показываем динамический прогресс
+    # Устанавливаем лимит итераций в зависимости от тарифа
+    if limits and limits.get('plan_type') == 'premium':
+        max_iterations = 3
+    else:
+        max_iterations = 1 # Бесплатный тариф
+
     processing_msg = await update.message.reply_text(
-        "🚀 <b>Начинаю работу над вашим письмом!</b>\n\n"
-        "🔍 <b>Шаг 3/3:</b> Анализирую вакансию...\n"
-        "⏳ Примерное время: 30-45 секунд\n\n"
-        "💭 <i>Создаю персональное письмо специально для вас</i>",
+        """🚀 <b>МАГИЯ НАЧАЛАСЬ!</b>
+
+⚡ <b>Что происходит прямо сейчас:</b>
+- Анализирую требования работодателя.
+- Нахожу пересечения с твоим опытом.
+- Формирую цепляющий заголовок и структуру.
+- Добавляю эмоцию и факты.
+
+⏳ <b>Осталось 30 секунд...</b>
+
+💎 *Создаю то самое письмо, которое HR прочитает до конца.*""",
         parse_mode='HTML'
     )
     
-    try:
-        # Аналитика
-        user_id = None
-        session_id = None
-        if context.user_data is not None:
-            user_id = context.user_data.get('analytics_user_id')
-            session_id = context.user_data.get('analytics_session_id')
-            
-            logger.info(f"🔍 RAILWAY DEBUG: handle_resume user_id: {user_id}, session_id: {session_id}")
-            
-            if user_id and session_id:
-                try:
-                    logger.info(f"🔍 RAILWAY DEBUG: Calling track_resume_sent...")
-                    await analytics.track_resume_sent(user_id, session_id, len(resume_text))
-                    logger.info(f"🔍 RAILWAY DEBUG: track_resume_sent completed")
-                except Exception as e:
-                    logger.error(f"❌ RAILWAY DEBUG: Exception in track_resume_sent: {e}")
-            else:
-                logger.error(f"❌ RAILWAY DEBUG: Missing user_id or session_id!")
-        else:
-            logger.error(f"❌ RAILWAY DEBUG: context.user_data is None in handle_resume!")
-        
-        # 🎯 ПРОСТАЯ ГЕНЕРАЦИЯ v6.1: Только письмо, без сложностей
-        start_time = time.time()
-        
-        # Обновляем сессию - добавляем данные резюме (с санитизацией v9.2)
-        if user_id and session_id:
-            from services.ai_factory import AIFactory
-            current_provider = AIFactory.get_provider_name()
-            
-            # Санитизируем резюме для БД (PII protection v9.2)
-            sanitized_resume = InputValidator.sanitize_resume_text(resume_text)
-            
-            await analytics.update_letter_session(session_id, {
-                'resume_text': sanitized_resume[:1000],  # Первые 1000 символов санитизированного текста
-                'resume_length': len(resume_text),
-                'openai_model_used': current_provider.lower()  # 'openai' или 'claude'
-            })
-        
-        letter = await generate_simple_letter(
-            vacancy_text=vacancy_text,
-            resume_text=resume_text,
-            user_id=user_id,
-            session_id=session_id
+    if context.user_data:
+        vacancy_text = context.user_data.get('vacancy', '')
+        asyncio.create_task(
+            _process_and_respond(
+                update, 
+                context, 
+                processing_msg, 
+                analytics_user_id, 
+                vacancy_text, 
+                resume_text,
+                max_iterations=max_iterations
+            )
         )
-        
+
+    return WAITING_FEEDBACK
+
+async def _process_and_respond(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    processing_msg: Message, 
+    user_id: int, 
+    vacancy_text: str, 
+    resume_text: str,
+    max_iterations: int
+):
+    """Приватная корутина для фоновой обработки"""
+    if not update.effective_user:
+        logger.error("Не удалось получить effective_user в _process_and_respond")
+        return
+
+    is_generation_successful = False
+    generated_letter = None
+    session_id = None
+    iteration_status = None
+    
+    try:
+        start_time = time.time()
+        # Создаем сессию аналитики
+        session_data = LetterSessionData(
+            user_id=user_id,
+            mode="v6.0",
+            job_description=vacancy_text,
+            job_description_length=len(vacancy_text),
+            resume_text=resume_text,
+            resume_length=len(resume_text),
+            max_iterations=max_iterations
+        )
+        session_id = await analytics.create_letter_session(session_data)
+
+        # Проверяем лимиты пользователя
+        limits = await subscription_service.check_user_limits(user_id)
+        if limits and not limits.get('can_generate'):
+            await processing_msg.edit_text(
+                subscription_service.format_limit_message(limits),
+                reply_markup=get_premium_info_keyboard()
+            )
+            return
+
+        # Проверяем что session_id не None
+        if not session_id:
+            logger.error("❌ session_id is None, cannot proceed")
+            await processing_msg.edit_text("❌ Ошибка создания сессии. Попробуйте /start")
+            return
+
+        generated_letter = await generate_simple_letter(vacancy_text, resume_text, user_id=user_id, session_id=session_id)
         generation_time = int(time.time() - start_time)
         
-        # Удаляем прогресс
         await processing_msg.delete()
-        
-        # Отправляем результат
-        await update.message.reply_text(
-            f"✍️ <b>ПИСЬМО:</b>\n\n{letter}",
-            parse_mode='HTML'
-        )
-        
-        # Получаем статус итераций для показа счетчика
-        iteration_status = None
-        if session_id:
-            try:
-                iteration_status = await feedback_service.get_session_iteration_status(session_id)
-                logger.info(f"🔍 RAILWAY DEBUG: iteration_status получен: {iteration_status}")
-            except Exception as e:
-                logger.error(f"❌ RAILWAY DEBUG: Ошибка получения iteration_status: {e}")
-        else:
-            logger.error(f"❌ RAILWAY DEBUG: session_id is None!")
-        
-        # Проверяем, успешно ли сгенерировалось письмо
-        is_generation_successful = (
-            letter and 
-            letter.strip() and 
-            letter != "Не удалось сгенерировать письмо. Попробуйте еще раз." and
-            letter != "Произошла ошибка при генерации письма. Попробуйте еще раз." and
-            len(letter.strip()) > 50  # Минимальная длина для нормального письма
-        )
-        
-        # Сохраняем данные для кнопок в context.user_data 
-        if context.user_data and session_id:
-            context.user_data['current_session_id'] = session_id
-            context.user_data['vacancy_text'] = vacancy_text  # Для улучшений
-            context.user_data['resume_text'] = resume_text    # Для улучшений
-        
-        # Формируем сообщение и кнопки в зависимости от результата генерации
+
+        is_generation_successful = bool(generated_letter)
+
         if is_generation_successful:
-            # Письмо сгенерировано успешно
-            feedback_message = f"🎉 <b>Письмо готово за {generation_time} секунд!</b>\n\n"
-            
-            if iteration_status:
-                counter_text = feedback_service.format_iteration_counter(iteration_status)
-                feedback_message += f"{counter_text}\n\n"
-            
-            feedback_message += (
-                "💡 <b>Оцените результат:</b>\n"
-                "• ❤️ Нравится - отлично!\n"
-                "• 👎 Не подходит - попробуем еще раз\n\n"
-                "🍀 <i>Ваша оценка поможет улучшить качество писем!</i>"
+            await update.effective_user.send_message(
+                f"✍️ <b>ПИСЬМО:</b>\n\n{generated_letter}",
+                parse_mode='HTML'
             )
-            
-            # SOFT SELL TOUCHPOINT - показываем premium предложение после генерации
-            if session_id and iteration_status:
-                keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration)
-                logger.info(f"✅ RAILWAY DEBUG: Premium кнопки созданы для session_id: {session_id}")
-                
-                # Трекаем показ premium предложения
-                if user_id:
-                    await analytics.track_premium_offer_shown(user_id, 'post_generation')
-            elif session_id:
-                # Fallback: создаем кнопки с дефолтными значениями если нет iteration_status
-                keyboard = get_post_generation_keyboard(session_id, 1)
-                logger.warning(f"⚠️ RAILWAY DEBUG: Использован fallback для premium кнопок, session_id: {session_id}")
-                
-                # Трекаем показ premium предложения
-                if user_id:
-                    await analytics.track_premium_offer_shown(user_id, 'post_generation')
-            else:
-                keyboard = None
-                logger.error(f"❌ RAILWAY DEBUG: Не могу создать кнопки оценки - нет session_id!")
+            await analytics.update_letter_session(session_id, {
+                'generated_letter': generated_letter[:2000],
+                'generated_letter_length': len(generated_letter),
+                'generation_time_seconds': generation_time,
+                'status': 'completed'
+            })
         else:
-            # Письмо НЕ сгенерировалось
-            feedback_message = f"❌ <b>Не удалось создать письмо</b>\n\n"
-            
-            if iteration_status:
-                counter_text = feedback_service.format_iteration_counter(iteration_status)
-                feedback_message += f"{counter_text}\n\n"
-            
-            feedback_message += (
-                "🔧 <b>Что можно сделать:</b>\n"
-                "• 🔄 Повторить генерацию - попробуем еще раз\n"
-                "• 🆕 Создать новое письмо - начать заново\n\n"
-                "💡 <i>Иногда помогает повторная попытка!</i>"
-            )
-            
-            # Показываем кнопку повтора
-            keyboard = get_retry_keyboard(session_id) if session_id else None
-            logger.warning(f"🔄 RAILWAY DEBUG: Показываю кнопку повтора для session_id: {session_id}")
+            await analytics.update_letter_session(session_id, {'status': 'failed'})
+
+        iteration_status = await feedback_service.get_session_iteration_status(session_id)
         
-        await update.message.reply_text(
+        # Формируем сообщение и кнопки
+        if is_generation_successful:
+            feedback_message = f"""🎉 <b>ПИСЬМО-МАГНИТ ГОТОВО! ({generation_time} сек)</b>
+
+🎯 <b>Что получилось:</b>
+- Письмо заточено под эту вакансию.
+- Подсвечены твои сильные стороны.
+- Добавлены ключевые слова, которые ищет HR.
+
+💡 <b>Как тебе?</b>
+• ❤️ <b>Супер!</b> - Готов отправлять.
+• 👎 <b>Нужно доработать</b> - Давай улучшим.
+
+🚀 *Твоя оценка помогает мне писать еще круче!*"""
+            keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration if iteration_status else 1)
+        else:
+            feedback_message = """❌ <b>Упс! Что-то пошло не так</b>
+
+🔧 <b>Не переживайте, такое иногда бывает:</b>
+• 🔄 Повторить попытку - часто помогает
+• 🆕 Начать заново - с новыми данными
+
+💪 <b>Каждая попытка улучшает результат!</b>
+
+💡 <i>Попробуйте сделать описание вакансии и резюме более подробными</i>"""
+            keyboard = get_retry_keyboard(session_id)
+
+        await update.effective_user.send_message(
             feedback_message,
             parse_mode='HTML',
             reply_markup=keyboard
         )
-        
-        # Завершаем аналитику
-        if user_id and session_id:
-            # Увеличиваем счетчик использованных писем (ТОЛЬКО для новых сессий!)
-            await subscription_service.increment_usage(user_id)
-            
-            # Обновляем сессию - добавляем результат генерации
-            await analytics.update_letter_session(session_id, {
-                'generated_letter': letter[:2000],  # Первые 2000 символов для экономии места
-                'generated_letter_length': len(letter),
-                'generation_time_seconds': generation_time,
-                'status': 'completed'
-            })
-            
-            await analytics.track_letter_generated(
-                user_id, session_id, len(letter), generation_time
-            )
-        
+
+        if context.user_data:
+            context.user_data['session_id_for_feedback'] = session_id
+            context.user_data['session_id_for_improvement'] = session_id
+
     except Exception as e:
-        logger.error(f"❌ Ошибка генерации: {e}")
-        
-        # 📊 АНАЛИТИКА: Логируем ошибку и помечаем сессию как заброшенную
-        if user_id and session_id:
-            try:
-                import traceback
-                from models.analytics_models import ErrorData
-                
-                error_data = ErrorData(
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    user_id=user_id,
-                    session_id=session_id,
-                    stack_trace=traceback.format_exc(),
-                    handler_name='handle_resume'
-                )
-                await analytics.log_error(error_data)
-                
-                # Помечаем сессию как неудачную
-                await analytics.update_letter_session(session_id, {
-                    'status': 'abandoned'
-                })
-            except Exception as log_error:
-                logger.error(f"Failed to log error to database: {log_error}")
-        
+        logger.error(f"Ошибка в _process_and_respond: {e}", exc_info=True)
         try:
             await processing_msg.delete()
-        except:
-            pass
-        
-        await update.message.reply_text(
-            "❌ <b>Произошла ошибка при создании письма</b>\n\n"
-            "🔧 <b>Что можно сделать:</b>\n"
-            "• Попробуйте еще раз: /start\n"
-            "• Проверьте, что тексты достаточно подробные\n"
-            "• Обратитесь в поддержку: /support\n\n"
-            "😔 <i>Извините за неудобства!</i>",
-            parse_mode='HTML'
-        )
-    
-    # НЕ очищаем context.user_data - нужно для кнопок обратной связи!
-    # Переходим в состояние ожидания обратной связи вместо завершения диалога
-    
-    return WAITING_FEEDBACK
+            await update.effective_user.send_message(
+                "❌ Произошла критическая ошибка. Попробуйте /start снова."
+            )
+        except Exception as e_inner:
+            logger.error(f"Не удалось отправить сообщение об ошибке пользователю: {e_inner}")
+
+    # Состояние ожидания обратной связи
+    # return WAITING_FEEDBACK # Это не работает в create_task, состояние устанавливается в родительской функции
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -626,10 +539,13 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if update.message:
         await update.message.reply_text(
-            "❌ <b>Создание письма отменено</b>\n\n"
-            "🔄 <b>Начать заново:</b> /start\n"
-            "❓ <b>Нужна помощь:</b> /help\n\n"
-            "👋 <i>Буду рад помочь вам снова!</i>",
+            """❌ <b>Создание письма остановлено.</b>
+
+Жаль, что мы не закончили.
+
+Если передумаешь, я всегда здесь. Просто нажми /start.
+
+🚀 *Помни: каждое хорошее письмо — это шаг к работе мечты!*""",
             parse_mode='HTML'
         )
     
@@ -781,7 +697,16 @@ async def handle_improve_letter(update: Update, context: ContextTypes.DEFAULT_TY
     prompt_text = feedback_service.get_improvement_prompt_text(iteration_status.remaining_iterations)
     
     await query.edit_message_text(
-        prompt_text,
+        """🔄 <b>ПОНЯЛ. ДАВАЙ СДЕЛАЕМ ЕГО ИДЕАЛЬНЫМ.</b>
+
+Что именно поправить? Чем конкретнее, тем лучше.
+
+<b>Например:</b>
+- "Больше про мой опыт с Python"
+- "Сделай тон более официальным"
+- "Убери упоминание про фриланс"
+
+✍️ *Напиши свои пожелания одним сообщением...*""",
         parse_mode='HTML'
         # БЕЗ reply_markup - никаких кнопок!
     )
@@ -960,35 +885,31 @@ async def handle_retry_generation(update: Update, context: ContextTypes.DEFAULT_
 
 @rate_limit('ai_requests', check_text_size=True)
 async def handle_improvement_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Обработка запроса на улучшение"""
-    if not update.message or not update.message.text:
+    """Обработка запроса на улучшение письма"""
+    if not update.message or not update.message.text or not context.user_data or not update.message.from_user:
         return WAITING_IMPROVEMENT_REQUEST
-    
-    improvement_request = update.message.text.strip()
-    
-    # Получаем данные
-    if not context.user_data:
-        await update.message.reply_text("❌ Ошибка: данные сессии потеряны")
-        return ConversationHandler.END
-    
+
+    user_id = update.message.from_user.id
     session_id = context.user_data.get('improvement_session_id')
-    user_id = context.user_data.get('analytics_user_id')
-    vacancy_text = context.user_data.get('vacancy_text')
+    improvement_request = update.message.text
     
-    if not all([session_id, user_id, vacancy_text]):
-        await update.message.reply_text("❌ Ошибка: неполные данные для улучшения")
+    if not session_id:
+        await update.message.reply_text("❌ Не могу найти исходное письмо для улучшения. Начните заново /start")
+        context.user_data.clear()
         return ConversationHandler.END
-    
-    # Проверяем типы данных
-    if not isinstance(session_id, str) or not isinstance(user_id, int) or not isinstance(vacancy_text, str):
-        await update.message.reply_text("❌ Ошибка: некорректные типы данных")
+
+    iteration_status = await feedback_service.get_session_iteration_status(session_id)
+    if not iteration_status or not iteration_status.can_iterate:
+        await update.message.reply_text(
+            "❌ Вы уже использовали все доступные улучшения для этого письма. "
+            "Чтобы получить больше правок, рассмотрите /premium или создайте новое письмо через /start."
+        )
+        context.user_data.clear()
         return ConversationHandler.END
-    
-    # Показываем прогресс
-    progress_msg = await update.message.reply_text(
-        "🔄 <b>Улучшаю письмо...</b>\n\n"
-        "⏳ Учитываю ваши пожелания\n"
-        "🎯 Создаю улучшенную версию",
+
+    processing_msg = await update.message.reply_text(
+        "🔄 <b>Улучшаю письмо с учетом ваших пожеланий...</b>\n\n"
+        "Это займет около 20-30 секунд.",
         parse_mode='HTML'
     )
     
@@ -1010,6 +931,13 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
         if session_response:
             previous_letter = session_response.get('generated_letter', '')
         
+        # Получаем vacancy_text из context
+        vacancy_text = context.user_data.get('vacancy_text', '')
+        if not vacancy_text:
+            logger.error("❌ vacancy_text not found in context")
+            await processing_msg.edit_text("❌ Данные вакансии потеряны. Начните заново: /start")
+            return WAITING_IMPROVEMENT_REQUEST
+
         # Fallback если предыдущее письмо не найдено
         if not previous_letter:
             logger.warning(f"⚠️ Previous letter not found for session {session_id}, using simple generation")
@@ -1065,7 +993,7 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
         await analytics.track_event(event_data)
         
         # Удаляем прогресс
-        await progress_msg.delete()
+        await processing_msg.delete()
         
         # Показываем улучшенное письмо
         await update.message.reply_text(
@@ -1082,7 +1010,7 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
                 "💡 <b>Оцените новую версию:</b>\n"
                 "• ❤️ Нравится - отлично!\n"
                 "• 👎 Не подходит - попробуем еще раз\n\n"
-                "⭐ <b>Premium:</b> 20 писем в день + лучшее качество\n\n"
+                "<b>Premium:</b> 20 писем в день, GPT-4o + Claude-3.5 работают вместе\n\n"
             )
             # SOFT SELL TOUCHPOINT - после улучшения
             keyboard = get_post_generation_keyboard(session_id, iteration_status.current_iteration)
@@ -1104,7 +1032,7 @@ async def handle_improvement_request(update: Update, context: ContextTypes.DEFAU
         logger.error(f"❌ Ошибка улучшения письма: {e}")
         
         try:
-            await progress_msg.delete()
+            await processing_msg.delete()
         except:
             pass
         
@@ -1156,8 +1084,16 @@ async def handle_waiting_feedback_message(update: Update, context: ContextTypes.
     """Обработка текстовых сообщений в состоянии ожидания обратной связи"""
     if update.message:
         await update.message.reply_text(
-            "💡 <b>Используйте кнопки выше для оценки письма</b>\n\n"
-            "🔄 <b>Или отправьте /start для создания нового письма</b>",
+            """💡 <b>Используйте кнопки выше для оценки письма</b>
+
+👆 <b>Нажмите:</b>
+• ❤️ если письмо понравилось
+• 👎 если нужно переделать
+• 🔄 чтобы попробовать еще раз
+
+🆕 <b>Или создайте новое письмо: /start</b>
+
+⚡ <i>Кнопки работают быстрее текстовых команд!</i>""",
             parse_mode='HTML'
         )
     return WAITING_FEEDBACK
@@ -1564,27 +1500,26 @@ async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await analytics.track_premium_info_viewed(user_id, source='command')
     
     premium_text = """
-⭐ <b>УЗНАЙТЕ БОЛЬШЕ О PREMIUM</b>
+<b>ГЛАВНЫЙ ЗАКОН НАЙМА: УНИКАЛЬНЫЕ ПИСЬМА → БОЛЬШЕ СОБЕСЕДОВАНИЙ</b>
 
-<b>🚀 Почему Premium?</b>
+Рассылать индивидуальные письма в каждую компанию нереально тяжело. Ещё тестовые делать, собеседоваться. А жить когда?
 
-<b>🎯 Качество результата:</b>
-• Использование двух AI: GPT-4o + Claude-3.5
-• Более точный анализ вакансий
-• Персонализированные письма
+Мы сделали бота, который пишет человечные письма за тебя. Обучен на промптах от HR и копирайтеров: изучает вакансию, твой опыт и создает письмо, которое не отличить от человеческого.
 
-<b>💪 Больше возможностей:</b>
-• 20 писем в день (вместо 3 в месяц)
-• Приоритетная обработка
-• Персональная поддержка
+<b>🆓 БЕСПЛАТНО</b>
+3 письма в месяц
+Базовый GPT-4o
 
-<b>📈 Результативность:</b>
-• На 40% больше откликов от HR
-• Более высокий процент приглашений
-• Профессиональный стиль письма
+<b>💎 PREMIUM</b>
+20 писем в день
+GPT-4o + Claude-3.5 работают вместе
+Двойная проверка = выше качество
 
-<b>💎 Стоимость Premium:</b>
-400 рублей/месяц
+<b>199 рублей/месяц</b>
+
+Можешь пользоваться бесплатно, можешь инвестировать в скорость. Когда найдешь работу мечты — окупится в тысячи раз.
+
+Попробовать Premium — пиши @shoodyakoff
 """
     
     keyboard = get_premium_info_keyboard()
@@ -1613,14 +1548,10 @@ async def handle_premium_inquiry(update: Update, context: ContextTypes.DEFAULT_T
             await analytics.track_contact_initiated(user_id)
     
     await query.edit_message_text(
-        "💎 <b>ОФОРМЛЕНИЕ PREMIUM ПОДПИСКИ</b>\n\n"
-        "📞 <b>Для оформления Premium подписки:</b>\n\n"
-        "1️⃣ Напишите в Telegram: @shoodyakoff\n"
-        "2️⃣ Укажите что хотите Premium подписку\n"
-        "3️⃣ Оплатите подписку\n"
-        "4️⃣ После оплаты активируем Premium\n\n"
-        "⚡ <b>Активация в течение 1 часа!</b>\n\n"
-        "💬 <b>Напишите прямо сейчас:</b> @shoodyakoff",
+        "<b>Получить Premium за 199₽/месяц</b>\n\n"
+        "Напишите @shoodyakoff:\n"
+        "\"Хочу Premium подписку\"\n\n"
+        "Активация в течение часа после оплаты",
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
@@ -1645,14 +1576,9 @@ async def handle_contact_support(update: Update, context: ContextTypes.DEFAULT_T
             await analytics.track_contact_initiated(user_id)
     
     await query.edit_message_text(
-        "📞 <b>СВЯЗАТЬСЯ С НАМИ</b>\n\n"
-        "💬 <b>Telegram:</b> @shoodyakoff\n\n"
-        "📝 <b>О чем можно написать:</b>\n"
-        "• Premium подписка\n"
-        "• Технические вопросы\n"
-        "• Предложения по улучшению\n"
-        "• Сотрудничество\n\n"
-        "⚡ <b>Отвечаем в течение 2-4 часов</b>",
+        "<b>Связаться с нами</b>\n\n"
+        "Telegram: @shoodyakoff\n\n"
+        "Отвечаем в течение 2-4 часов",
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
@@ -1677,27 +1603,28 @@ async def handle_premium_info(update: Update, context: ContextTypes.DEFAULT_TYPE
             await analytics.track_premium_info_viewed(user_id, source='button')
     
     premium_info = """
-⭐ <b>УЗНАЙТЕ БОЛЬШЕ О PREMIUM</b>
+<b>ЗАКОН РЫНКА НАЙМА: БОЛЬШЕ ОТКЛИКОВ — БОЛЬШЕ ШАНСОВ</b>
 
-<b>🚀 Почему Premium?</b>
+Рассылать индивидуальные письма в каждую компанию нереально тяжело. Ещё тестовые делать, собеседоваться. А жить когда?
 
-<b>🎯 Качество результата:</b>
-• Использование двух AI: GPT-4o + Claude-3.5
-• Более точный анализ вакансий
-• Персонализированные письма
+Мы сделали бота, который пишет человечные письма за тебя. Обучен на промптах от HR и копирайтеров: изучает вакансию, твой опыт и создает письмо, которое не отличить от человеческого.
 
-<b>💪 Больше возможностей:</b>
-• 20 писем в день (вместо 3 в месяц)
-• Приоритетная обработка
-• Персональная поддержка
+<b>🆓 БЕСПЛАТНО</b>
+3 письма в месяц
+Базовый GPT-4o
+1 улучшение письма
 
-<b>📈 Результативность:</b>
-• На 40% больше откликов от HR
-• Более высокий процент приглашений
-• Профессиональный стиль письма
+<b>💎 PREMIUM</b>
+20 писем в день
+GPT-4o + Claude-3.5 работают вместе
+Двойная проверка = выше качество
+3 улучшения письма
 
-<b>💎 Стоимость Premium:</b>
-400 рублей/месяц
+<b>199 рублей/месяц</b>
+
+Можешь пользоваться бесплатно, можешь инвестировать в скорость. Когда найдешь работу мечты — окупится в тысячи раз.
+
+Попробовать Premium — пиши @shoodyakoff
 """
     
     keyboard = get_premium_info_keyboard()
@@ -1726,19 +1653,16 @@ async def handle_unlock_limits(update: Update, context: ContextTypes.DEFAULT_TYP
             await analytics.track_contact_initiated(user_id)
     
     await query.edit_message_text(
-        "🔓 <b>РАЗБЛОКИРОВКА ЛИМИТОВ</b>\n\n"
-        "💎 <b>Premium подписка дает:</b>\n\n"
-        "🔄 20 писем в день (вместо 3 в месяц)\n"
-        "⚡ Приоритетная обработка\n"
-        "🤖 Доступ к лучшим AI моделям\n"
-        "🚀 Персональная поддержка\n\n"
-        "💰 <b>Стоимость: 400 рублей/месяц</b>\n\n"
-        "💰 <b>Оформить Premium:</b>\n"
-        "Напишите @shoodyakoff для получения подписки\n\n"
-        "⏱️ <b>Активация в течение 1 часа!</b>",
+        "<b>Разблокировать лимиты</b>\n\n"
+        "<b>Premium дает:</b>\n"
+        "20 писем в день вместо 3 в месяц\n"
+        "GPT-4o + Claude-3.5 работают вместе\n"
+        "Больше откликов = больше шансов на работу\n\n"
+        "<b>199 рублей/месяц</b>\n\n"
+        "Написать @shoodyakoff для подключения",
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Получить Premium", callback_data="premium_inquiry")],
+            [InlineKeyboardButton("Получить Premium", callback_data="premium_inquiry")],
             [InlineKeyboardButton("◀️ Назад", callback_data="back_to_bot")]
         ])
     )
