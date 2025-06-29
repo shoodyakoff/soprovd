@@ -38,6 +38,39 @@ app = FastAPI(
     version="10.1.0"
 )
 
+# Middleware для проверки IP-адресов (ВРЕМЕННО ОТКЛЮЧЕНА ДЛЯ ДИАГНОСТИКИ НА ПРОДЕ)
+# @app.middleware("http")
+# async def ip_check_middleware(request: Request, call_next):
+#     """Проверяет, что IP-адрес входит в доверенные подсети ЮKassa."""
+#     # ... существующий код middleware ...
+#     client_ip = request.client.host
+#
+#     # Список доверенных IP-адресов и подсетей ЮKassa
+#     # https://yookassa.ru/developers/using-api/webhooks#ip-addresses
+#     trusted_ips = [
+#         "185.71.76.0/27",
+#         "185.71.77.0/27",
+#         "77.75.153.0/25",
+#         "77.75.154.128/25",
+#         "2a02:5180:0:1::/64",
+#         "2a02:5180:0:2::/64",
+#         "2a02:5180:0:3::/64",
+#         "2a02:5180:0:4::/64"
+#     ]
+#
+#     ip_is_trusted = any(ip_address(client_ip) in ip_network(net) for net in trusted_ips)
+#
+#     if not ip_is_trusted:
+#         logger.warning(f"🚫 Denied access from untrusted IP: {client_ip}")
+#         return JSONResponse(
+#             status_code=403,
+#             content={"detail": "Forbidden: IP address not trusted"}
+#         )
+#
+#     logger.info(f"✅ Granted access from trusted IP: {client_ip}")
+#     response = await call_next(request)
+#     return response
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
