@@ -77,15 +77,6 @@ async def health_check():
     logger.info("✅ Health check endpoint was hit!")
     return {"status": "OK"}
 
-@app.get("/webhook/health")
-async def webhook_health():
-    """Health check для webhook endpoint"""
-    return {
-        "status": "healthy",
-        "webhook_path": WEBHOOK_PATH,
-        "payments_enabled": YOOKASSA_ENABLED
-    }
-
 @app.post(WEBHOOK_PATH)
 async def handle_yookassa_webhook(request: Request):
     """
