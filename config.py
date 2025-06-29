@@ -44,7 +44,7 @@ AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')  # 'openai' или 'claude'
 # Настройки OpenAI
 OPENAI_MODEL = "gpt-4o"
 OPENAI_FALLBACK_MODEL = "gpt-4"
-OPENAI_TIMEOUT = 120  # Увеличен для сложных анализов
+OPENAI_TIMEOUT = 60  # Оптимизирован для быстрой генерации
 MAX_GENERATION_ATTEMPTS = 3
 
 # Параметры генерации OpenAI
@@ -56,7 +56,7 @@ OPENAI_FREQUENCY_PENALTY = 0.2  # Штраф за повторы слов (-2.0 
 # Настройки Claude
 CLAUDE_MODEL = "claude-3-5-sonnet-20241022"
 CLAUDE_FALLBACK_MODEL = "claude-3-haiku-20240307"
-CLAUDE_TIMEOUT = 120
+CLAUDE_TIMEOUT = 60  # Оптимизирован для быстрой генерации
 CLAUDE_MAX_TOKENS = 2000
 
 # Параметры генерации Claude

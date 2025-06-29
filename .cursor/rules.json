@@ -33,5 +33,13 @@
     "Callback query handlers с proper error handling",
     "Keyboard markup через utils/keyboards.py",
     "Все сообщения через message templates"
+  ],
+  "release_management": [
+    "Вся работа ведется в папке 'releases/'. Никогда не создавай задачи или миграции вне релиза.",
+    "Новая задача = новый файл в 'releases/vXX_feature_name/tasks/' из шаблона 'templates/task_template.md'.",
+    "Новая миграция БД = новый файл в 'releases/vXX_feature_name/migrations/' из шаблона 'templates/migration_template.sql'.",
+    "Завершенные релизы ПЕРЕМЕЩАЮТСЯ в 'releases/archive/completed_releases/'. Не изменять содержимое архива без прямого указания.",
+    "Файл 'releases/current/active_tasks.md' - это high-level статус. Обновляй его при изменении статуса релиза (старт, пауза, завершение, архивация).",
+    "При любом изменении кода, которое затрагивает архитектуру, путь пользователя или конфигурацию, ОБЯЗАТЕЛЬНО проверь и предложи обновить 'docs/ARCHITECTURE.md', 'docs/CJM.md' и 'docs/CONFIG_REFERENCE.md'."
   ]
 } 

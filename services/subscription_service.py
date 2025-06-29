@@ -231,6 +231,8 @@ class SubscriptionService:
             if not self.supabase:
                 return True
             
+            logger.info(f"🔄 Attempting atomic increment for user {user_id}")
+            
             # Используем атомарную SQL функцию
             response = self.supabase.rpc('increment_user_letters', {
                 'user_id_param': user_id
@@ -249,17 +251,42 @@ class SubscriptionService:
                 return False
             
         except Exception as e:
-            logger.error(f"❌ Error in atomic increment_usage for user {user_id}: {e}")
+            error_msg = str(e)
+            logger.error(f"❌ Error in atomic increment_usage for user {user_id}: {error_msg}")
+            
+            # Проверяем тип ошибки для лучшей диагностики
+            if "column reference \"plan_type\" is ambiguous" in error_msg:
+                logger.warning(f"⚠️ SQL function has ambiguous column reference - using fallback for user {user_id}")
+            elif "42702" in error_msg:
+                logger.warning(f"⚠️ PostgreSQL error 42702 (ambiguous column) - using fallback for user {user_id}")
+            else:
+                logger.warning(f"⚠️ Unknown error type - using fallback for user {user_id}")
             
             # Fallback на старую логику только в крайнем случае
             try:
-                logger.warning(f"⚠️ Falling back to old increment logic for user {user_id}")
+                logger.info(f"🔄 Falling back to manual increment logic for user {user_id}")
+                
+                # Получаем текущую подписку
                 from services.analytics_service import analytics
                 subscription = await analytics.get_or_create_subscription(user_id)
+                
                 if subscription:
-                    await analytics.increment_letters_used(user_id)
+                    # Ручное увеличение счетчика
+                    current_used = subscription.get('letters_used', 0)
+                    new_used = current_used + 1
+                    
+                    # Обновляем в БД
+                    self.supabase.table('subscriptions').update({
+                        'letters_used': new_used,
+                        'updated_at': 'now()'
+                    }).eq('user_id', user_id).execute()
+                    
+                    logger.info(f"✅ Manual increment successful for user {user_id}: {current_used} -> {new_used}")
                     return True
-                return False
+                else:
+                    logger.error(f"❌ No subscription found for manual increment - user {user_id}")
+                    return False
+                    
             except Exception as fallback_e:
                 logger.error(f"❌ Fallback increment also failed for user {user_id}: {fallback_e}")
                 return False

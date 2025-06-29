@@ -154,6 +154,10 @@ class ClaudeService(AIService):
             logger.info(f"🤖 Отправляю запрос к Claude (temp={temperature}, max_tokens={max_tokens}, timeout={CLAUDE_TIMEOUT}s)")
             logger.info(f"📝 Длина промпта: {len(prompt)} символов")
             
+            # Логируем время начала запроса
+            request_start = time.time()
+            logger.info(f"⏱️ Начинаю запрос к Claude API в {request_start:.2f}s")
+            
             response = await asyncio.wait_for(
                 self.client.messages.create(
                     model=CLAUDE_MODEL,
@@ -169,12 +173,23 @@ class ClaudeService(AIService):
                 timeout=CLAUDE_TIMEOUT
             )
             
+            # Логируем время получения ответа
+            response_received = time.time()
+            api_time = response_received - request_start
+            logger.info(f"⏱️ Claude API ответил за {api_time:.2f}s")
+            
             response_time_ms = int((time.time() - start_time) * 1000)
             
+            # Логируем время обработки ответа
+            processing_start = time.time()
             text_content = _extract_text_from_response(response)
+            processing_time = time.time() - processing_start
+            logger.info(f"⏱️ Обработка ответа заняла {processing_time:.2f}s")
+            
             if text_content:
                 content = text_content
-                logger.info(f"✅ Получен ответ от Claude: {len(content)} символов")
+                total_time = time.time() - start_time
+                logger.info(f"✅ Получен ответ от Claude: {len(content)} символов за {total_time:.2f}s")
                 
                 # 📊 АНАЛИТИКА: Логируем успешный запрос
                 await self._log_claude_request(
