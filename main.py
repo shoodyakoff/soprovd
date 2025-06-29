@@ -2,16 +2,19 @@
 Главный файл Telegram-бота Сопровод v6.0
 НОВАЯ ЛОГИКА: единый анализ через smart_analyzer_v6
 FORCED UPDATE: 2025-06-24 08:08:00 UTC - COMMIT 697ea19 - WEBHOOK FIX
+ЮKASSA INTEGRATION: v10.1 - автоматические платежи
 """
 
 # ПРИНУДИТЕЛЬНЫЙ ВЫВОД САМЫЙ ПЕРВЫЙ - COMMIT fdccee3
 print("=" * 60)
 print("🚨🚨🚨 MAIN.PY STARTING - COMMIT 697ea19 🚨🚨🚨")
 print("🚨🚨🚨 WEBHOOK FIXED - NEW CODE RUNNING! 🚨🚨🚨")
+print("🚨🚨🚨 ЮKASSA INTEGRATION v10.1 ENABLED! 🚨🚨🚨")
 print("=" * 60)
 
 import logging
 import os
+import threading
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -103,6 +106,15 @@ async def post_init(application):
     
     print("=" * 60)
 
+def start_webhook_server(bot):
+    """Запускает webhook сервер в отдельном потоке"""
+    try:
+        from webhook_handler import start_webhook_server as start_server
+        logger.info("🚀 Starting ЮKassa webhook server...")
+        start_server(bot)
+    except Exception as e:
+        logger.error(f"❌ Failed to start webhook server: {e}")
+
 def main():
     """
     Основная функция запуска бота v6.0 - НОВАЯ ЛОГИКА для Стаса!
@@ -126,6 +138,14 @@ def main():
     # Создаем приложение
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     
+    # Передаем bot instance в webhook_handler для отправки уведомлений
+    try:
+        from webhook_handler import set_bot_instance
+        set_bot_instance(application.bot)
+        logger.info("🤖 Bot instance passed to webhook handler")
+    except Exception as e:
+        logger.error(f"❌ Failed to set bot instance in webhook handler: {e}")
+    
     # Добавляем НОВЫЙ v6.0 handler - только актуальная логика!
     v6_handler = get_conversation_handler()
     application.add_handler(v6_handler)
@@ -142,6 +162,18 @@ def main():
     # Старый help handler удален - используем новый из handlers
     
     logger.info("🚀 Стас, бот Сопровод v6.0 запущен! НОВАЯ ЛОГИКА: smart_analyzer_v6 + UNIFIED_ANALYSIS_PROMPT!")
+    
+    # Запускаем webhook сервер в отдельном потоке для ЮKassa
+    try:
+        from config import YOOKASSA_ENABLED
+        if YOOKASSA_ENABLED:
+            webhook_thread = threading.Thread(target=lambda: start_webhook_server(application.bot), daemon=True)
+            webhook_thread.start()
+            logger.info("✅ ЮKassa webhook server started in background")
+        else:
+            logger.info("ℹ️ ЮKassa webhook server disabled - payments not configured")
+    except Exception as e:
+        logger.error(f"❌ Failed to start webhook server: {e}")
     
     # Запускаем бота
     application.run_polling(allowed_updates=["message", "callback_query"])

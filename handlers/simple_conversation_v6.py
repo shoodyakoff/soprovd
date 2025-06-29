@@ -13,14 +13,16 @@ from services.analytics_service import analytics
 from services.subscription_service import subscription_service
 from services.feedback_service import feedback_service
 from services.acquisition_service import acquisition_service
+from services.payment_service import payment_service
 from models.analytics_models import UserData, LetterSessionData
 from models.feedback_models import LetterFeedbackData, LetterIterationImprovement
 from utils.validators import InputValidator, ValidationMiddleware
-from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard, get_premium_info_keyboard, get_post_generation_keyboard, get_limit_reached_keyboard, get_iteration_upsell_keyboard
+from utils.keyboards import get_feedback_keyboard, get_iteration_keyboard, get_final_letter_keyboard, get_retry_keyboard, get_start_work_keyboard, get_premium_info_keyboard, get_post_generation_keyboard, get_limit_reached_keyboard, get_iteration_upsell_keyboard, get_payment_keyboard, get_payment_success_keyboard, get_payment_error_keyboard, get_payment_processing_keyboard
 from utils.database import save_user_consent, get_user_consent_status
 from utils.rate_limiter import rate_limit, rate_limiter
 from config import RATE_LIMITING_ENABLED, ADMIN_TELEGRAM_IDS
 import asyncio
+from telegram.ext import CommandHandler
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,42 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 ⚡ Отвечаю быстро и помогаю решить любые вопросы. Каждое обращение делает бот лучше!""",
             parse_mode='HTML'
         )
+
+@rate_limit('commands')
+async def test_premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда для тестирования Premium активации (только для разработки)"""
+    if update.message:
+        user = update.effective_user
+        if not user:
+            return
+        
+        # Проверяем что это разработчик
+        if user.id not in [678674926]:  # Ваш Telegram ID
+            await update.message.reply_text("❌ Эта команда доступна только разработчикам")
+            return
+        
+        user_id = await analytics.get_user_id(user.id)
+        if not user_id:
+            await update.message.reply_text("❌ Пользователь не найден в аналитике")
+            return
+        
+        try:
+            # Активируем Premium вручную
+            success = await subscription_service.activate_premium_subscription(user_id, "test_manual_activation")
+            
+            if success:
+                # Отправляем уведомление
+                notification_success = await payment_service.send_premium_activation_notification(user_id, user.id)
+                
+                if notification_success:
+                    await update.message.reply_text("✅ Premium активирован и уведомление отправлено!")
+                else:
+                    await update.message.reply_text("✅ Premium активирован, но уведомление не отправлено")
+            else:
+                await update.message.reply_text("❌ Ошибка активации Premium")
+                
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка: {str(e)}")
 
 
 @rate_limit('commands')
@@ -258,16 +296,13 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return WAITING_VACANCY
     
     # Сохраняем вакансию
+    user_id = None
     if context.user_data is not None:
         context.user_data['vacancy_text'] = vacancy_text
-        
-        # Создаем сессию аналитики
         user_id = context.user_data.get('analytics_user_id')
-        logger.info(f"🔍 RAILWAY DEBUG: handle_vacancy analytics_user_id: {user_id}")
-        
-        if user_id:
+        # Создаем сессию аналитики, только если её ещё нет
+        if user_id and not context.user_data.get('analytics_session_id'):
             logger.info(f"🔍 RAILWAY DEBUG: Creating LetterSessionData for user {user_id}")
-            
             try:
                 session_data = LetterSessionData(
                     user_id=user_id,
@@ -277,10 +312,8 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     selected_style="professional"
                 )
                 logger.info(f"🔍 RAILWAY DEBUG: LetterSessionData created successfully")
-                
                 session_id = await analytics.create_letter_session(session_data)
                 logger.info(f"🔍 RAILWAY DEBUG: create_letter_session returned: {session_id}")
-                
                 if session_id:
                     context.user_data['analytics_session_id'] = session_id
                     logger.info(f"🔍 RAILWAY DEBUG: Calling track_vacancy_sent...")
@@ -288,13 +321,15 @@ async def handle_vacancy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     logger.info(f"🔍 RAILWAY DEBUG: track_vacancy_sent completed")
                 else:
                     logger.error(f"❌ RAILWAY DEBUG: create_letter_session returned None!")
-                    
             except Exception as e:
                 logger.error(f"❌ RAILWAY DEBUG: Exception in vacancy analytics: {e}")
                 import traceback
                 logger.error(f"❌ RAILWAY DEBUG: Traceback: {traceback.format_exc()}")
         else:
-            logger.error(f"❌ RAILWAY DEBUG: No analytics_user_id found!")
+            if not user_id:
+                logger.error(f"❌ RAILWAY DEBUG: No analytics_user_id found!")
+            else:
+                logger.info(f"🔍 RAILWAY DEBUG: analytics_session_id already exists, skipping creation")
     else:
         logger.error(f"❌ RAILWAY DEBUG: context.user_data is None!")
     
@@ -1264,6 +1299,8 @@ def get_command_handlers():
         CommandHandler("support", support_command),
         # PREMIUM команда v9.3
         CommandHandler("premium", premium_command),
+        # ТЕСТОВАЯ команда для разработки
+        CommandHandler("test_premium", test_premium_command),
         # СКРЫТЫЕ команды (НЕ отображаются в меню)
         CommandHandler("privacy", privacy_command),
         CommandHandler("terms", terms_command),
@@ -1277,8 +1314,14 @@ def get_command_handlers():
         CallbackQueryHandler(handle_premium_info, pattern=r'^premium_info$'),
         CallbackQueryHandler(handle_unlock_limits, pattern=r'^unlock_limits$'),
         CallbackQueryHandler(handle_back_to_premium, pattern=r'^back_to_premium$'),
+        # ЮKASSA PAYMENT HANDLERS v10.1
+        CallbackQueryHandler(handle_cancel_payment, pattern=r'^cancel_payment$'),
+        CallbackQueryHandler(handle_retry_payment, pattern=r'^retry_payment$'),
+        CallbackQueryHandler(handle_payment_processing, pattern=r'^payment_processing$'),
+        CallbackQueryHandler(handle_premium_activated, pattern=r'^premium_activated$'),
         # Обработчик текстовых сообщений вне активной сессии (должен быть последним!)
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_outside_session)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message_outside_session),
+        CommandHandler("subscription", subscription_info_command),
     ]
 
 
@@ -1698,12 +1741,12 @@ GPT-4o + Claude-3.5 работают вместе
 
 
 async def handle_premium_inquiry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик кнопки 'Получить Premium'"""
+    """Обработчик кнопки 'Получить Premium' - ЮKassa интеграция v10.1"""
     query = update.callback_query
     if not query:
         return
     
-    await query.answer("Переходим к оформлению Premium...")
+    await query.answer("Создаем платеж...")
     
     user = update.effective_user
     user_id = None
@@ -1713,16 +1756,71 @@ async def handle_premium_inquiry(update: Update, context: ContextTypes.DEFAULT_T
             await analytics.track_premium_button_clicked(user_id, 'premium_inquiry', 'button')
             await analytics.track_contact_initiated(user_id)
     
+    # Показываем экран обработки
     await query.edit_message_text(
-        "<b>Получить Premium за 199₽/месяц</b>\n\n"
-        "Напишите @shoodyakoff:\n"
-        "\"Хочу Premium подписку\"\n\n"
-        "Активация в течение часа после оплаты",
+        "<b>💳 Создание платежа</b>\n\n"
+        "⏳ Подготавливаем страницу оплаты...",
         parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
-        ])
+        reply_markup=get_payment_processing_keyboard()
     )
+    
+    try:
+        # Создаем платеж через ЮKassa
+        if user_id is None:
+            logger.error(f"❌ User ID not found for Telegram user {user.id if user else 'unknown'}")
+            raise Exception("User ID not found")
+            
+        success, message, payment_url = await payment_service.create_premium_payment(
+            user_id=user_id,
+            user_telegram_id=user.id if user else 0
+        )
+        
+        if success and payment_url:
+            # Показываем ссылку на оплату
+            await query.edit_message_text(
+                "<b>💎 Premium подписка - 199₽/месяц</b>\n\n"
+                "✅ <b>Что включено:</b>\n"
+                "• 20 писем в день\n"
+                "• GPT-4o + Claude-3.5\n"
+                "• Двойная проверка качества\n"
+                "• 3 улучшения письма\n\n"
+                "💳 <b>Нажмите кнопку ниже для оплаты</b>\n"
+                "После оплаты Premium активируется автоматически",
+                parse_mode='HTML',
+                reply_markup=get_payment_keyboard(payment_url)
+            )
+            
+            logger.info(f"✅ Payment link shown for user {user.id if user else 'unknown'}")
+            
+        else:
+            # Fallback на ручную обработку
+            await query.edit_message_text(
+                "<b>Получить Premium за 199₽/месяц</b>\n\n"
+                "Напишите @shoodyakoff:\n"
+                "\"Хочу Premium подписку\"\n\n"
+                "Активация в течение часа после оплаты",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+                ])
+            )
+            
+            logger.warning(f"⚠️ Payment creation failed for user {user.id if user else 'unknown'}, using manual fallback")
+            
+    except Exception as e:
+        logger.error(f"❌ Error in handle_premium_inquiry for user {user.id if user else 'unknown'}: {e}")
+        
+        # Fallback на ручную обработку при ошибке
+        await query.edit_message_text(
+            "<b>Получить Premium за 199₽/месяц</b>\n\n"
+            "Напишите @shoodyakoff:\n"
+            "\"Хочу Premium подписку\"\n\n"
+            "Активация в течение часа после оплаты",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+            ])
+        )
 
 
 async def handle_contact_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1812,5 +1910,144 @@ async def handle_back_to_premium(update: Update, context: ContextTypes.DEFAULT_T
     # Просто возвращаемся к экрану Premium информации
     await handle_premium_info(update, context)
 
+# ============================================================================
+# ЮKASSA PAYMENT HANDLERS v10.1 - ОБРАБОТКА ПЛАТЕЖЕЙ
+# ============================================================================
+
+async def handle_cancel_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик отмены платежа"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Платеж отменен")
+    
+    await query.edit_message_text(
+        "<b>Платеж отменен</b>\n\n"
+        "Вы можете попробовать снова или связаться с поддержкой.",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Попробовать снова", callback_data="premium_inquiry")],
+            [InlineKeyboardButton("📞 Поддержка", callback_data="contact_support")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+        ])
+    )
+
+async def handle_retry_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик повторной попытки платежа"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Повторяем платеж...")
+    
+    # Просто вызываем основной обработчик платежа
+    await handle_premium_inquiry(update, context)
+
+async def handle_payment_processing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик кнопки 'Обрабатывается'"""
+    query = update.callback_query
+    if not query:
+        return
+    
+    await query.answer("Платеж обрабатывается...")
+    
+    await query.edit_message_text(
+        "<b>⏳ Платеж обрабатывается</b>\n\n"
+        "Это может занять несколько минут.\n"
+        "Если у вас есть вопросы, обратитесь в поддержку.",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📞 Поддержка", callback_data="contact_support")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")]
+        ])
+    )
+
+async def handle_premium_activated(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик успешной активации Premium"""
+    query = update.callback_query
+    if not query:
+        return
+
+    await query.answer("Premium активирован!")
+
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+        if user_id:
+            # Трекаем активацию Premium
+            await analytics.track_premium_button_clicked(user_id, 'premium_activated', 'payment')
+
+    # Скрываем экран оплаты (редактируем на короткое уведомление)
+    try:
+        await query.edit_message_text(
+            "✅ Оплата прошла, подписка активирована!",
+            parse_mode='HTML'
+        )
+    except Exception:
+        pass
+
+    # Отправляем новое сообщение с активацией Premium и одной кнопкой
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="<b>🎉 Premium активирован!</b>\n\n"
+                 "✅ Ваша Premium подписка активна\n"
+                 "✅ 20 писем в день доступны\n"
+                 "✅ GPT-4o + Claude-3.5 работают вместе\n\n"
+                 "✍️ Готовы создать первое Premium сопроводительное?",
+            parse_mode='HTML',
+            reply_markup=get_payment_success_keyboard()
+        )
+
+@rate_limit('commands')
+async def subscription_info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    user_id = None
+    if user:
+        user_id = await analytics.get_user_id(user.id)
+    if not user_id:
+        if update.message:
+            await update.message.reply_text("❌ Не удалось получить данные пользователя")
+        return
+
+    from services.subscription_service import subscription_service
+    limits = await subscription_service.check_user_limits(user_id, force_refresh=True)
+
+    # ВРЕМЕННО: выводим limits в лог для диагностики
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[DEBUG] subscription_info_command limits: {limits}")
+
+    # Получаем дату окончания подписки, если есть
+    period_end = limits.get('period_end')
+    period_end_str = ''
+    if period_end:
+        from datetime import datetime
+        try:
+            end_date = datetime.fromisoformat(period_end.replace('Z', '+00:00')) if isinstance(period_end, str) else period_end
+            period_end_str = end_date.strftime('%d.%m.%Y')
+        except Exception as e:
+            period_end_str = str(period_end)
+            logger.warning(f"[DEBUG] Ошибка парсинга period_end: {e}, raw: {period_end}")
+
+    if limits['plan_type'] == 'premium' and limits.get('is_active', True):
+        status_message = f"""✅ <b>Premium подписка активна!</b>\n\n📊 <b>Ваша подписка:</b>\n• План: Premium\n• Писем осталось сегодня: {limits['remaining']}/{limits['letters_limit']}\n• Действует до: <b>{period_end_str}</b>\n\n🎉 <b>Активированные функции:</b>\n• 20 писем в день\n• GPT-4o + Claude-3.5\n• 3 итерации улучшений\n• Приоритетная поддержка\n\n🆕 Можете создать новое письмо: /start"""
+        reply_markup = None
+    else:
+        status_message = f"""💡 <b>У вас бесплатная подписка</b>\n\n📊 <b>Ваши лимиты:</b>\n• План: Free\n• Писем осталось в месяце: {limits['remaining']}/{limits['letters_limit']}\n\n💎 <b>Хотите больше?</b>\nPremium дает 20 писем в день + лучшее качество"""
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Купить Premium", callback_data="premium_inquiry")]
+        ])
+
+    if update.message:
+        await update.message.reply_text(
+            status_message,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
 
  

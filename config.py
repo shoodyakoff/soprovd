@@ -35,6 +35,7 @@ else:
 
 # Токены и ключи API
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+BOT_USERNAME = os.getenv('BOT_USERNAME', 'your_bot_username')  # Имя бота для return_url
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 
@@ -113,9 +114,26 @@ RATE_LIMIT_COMMANDS_PER_MINUTE = int(os.getenv('RATE_LIMIT_COMMANDS_PER_MINUTE',
 RATE_LIMIT_AI_PER_5MIN = int(os.getenv('RATE_LIMIT_AI_PER_5MIN', '3'))
 MAX_TEXT_SIZE_KB = int(os.getenv('MAX_TEXT_SIZE_KB', '50'))
 
+# === НАСТРОЙКИ ЮKASSA v10.1 ===
+YOOKASSA_SHOP_ID = os.getenv('YOOKASSA_SHOP_ID')
+YOOKASSA_SECRET_KEY = os.getenv('YOOKASSA_SECRET_KEY')
+YOOKASSA_ENABLED = os.getenv('YOOKASSA_ENABLED', 'false').lower() == 'true'
+
+# Настройки webhook сервера
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '0.0.0.0')
+# WEBHOOK_PORT больше не используется напрямую, порт берется из переменной PORT от Railway
+WEBHOOK_PORT = int(os.getenv('PORT', 8000)) # Оставляем для обратной совместимости и локального запуска
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook/yookassa')
+
 logger.info("🔒 SECURITY SETTINGS v9.2:")
 logger.info(f"   Rate limiting enabled: {RATE_LIMITING_ENABLED}")
 logger.info(f"   Admin IDs: {ADMIN_TELEGRAM_IDS}")
 logger.info(f"   Commands limit: {RATE_LIMIT_COMMANDS_PER_MINUTE}/min")
 logger.info(f"   AI requests limit: {RATE_LIMIT_AI_PER_5MIN}/5min")
-logger.info(f"   Max text size: {MAX_TEXT_SIZE_KB}KB") 
+logger.info(f"   Max text size: {MAX_TEXT_SIZE_KB}KB")
+
+logger.info("💳 ЮKASSA SETTINGS v10.1:")
+logger.info(f"   ЮKassa enabled: {YOOKASSA_ENABLED}")
+logger.info(f"   Shop ID: {YOOKASSA_SHOP_ID[:10] if YOOKASSA_SHOP_ID else 'NOT_FOUND'}...")
+logger.info(f"   Secret key: {YOOKASSA_SECRET_KEY[:10] if YOOKASSA_SECRET_KEY else 'NOT_FOUND'}...")
+logger.info(f"   Webhook Port (from PORT env or default): {WEBHOOK_PORT}") 

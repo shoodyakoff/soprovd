@@ -515,6 +515,18 @@ class AnalyticsService:
             }
         )
         return await self.track_event(event)
+    
+    async def track_premium_activated(self, user_id: int, source: str = 'manual') -> bool:
+        """Отследить активацию Premium подписки"""
+        logger.info(f"💰 Трекаю premium_activated: user_id={user_id}, source={source}")
+        event = EventData(
+            user_id=user_id,
+            event_type='premium_activated',
+            event_data={
+                'source': source
+            }
+        )
+        return await self.track_event(event)
 
 # Глобальный экземпляр сервиса
 analytics = AnalyticsService() 

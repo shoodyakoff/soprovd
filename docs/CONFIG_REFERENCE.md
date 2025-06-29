@@ -19,6 +19,20 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=eyJ...
 ```
 
+### 💳 **Платежная система ЮKassa**
+
+```env
+# ЮKassa настройки
+YOOKASSA_SHOP_ID=123456
+YOOKASSA_SECRET_KEY=test_abcd1234...
+YOOKASSA_ENABLED=true
+
+# Webhook сервер
+WEBHOOK_HOST=0.0.0.0
+WEBHOOK_PORT=8000
+WEBHOOK_PATH=/webhook/yookassa
+```
+
 ### 📊 **Аналитика и база данных**
 
 ```env
@@ -114,7 +128,11 @@ DEFAULT_SETTINGS = {
     'MAX_TEXT_SIZE_KB': 50,
     'AI_TEMPERATURE': 0.7,
     'AI_MAX_TOKENS': 2000,
-    'DATABASE_POOL_SIZE': 10
+    'DATABASE_POOL_SIZE': 10,
+    'YOOKASSA_ENABLED': False,
+    'WEBHOOK_HOST': '0.0.0.0',
+    'WEBHOOK_PORT': 8000,
+    'WEBHOOK_PATH': '/webhook/yookassa'
 }
 ```
 
@@ -133,6 +151,7 @@ python run_dev.py
 - Environment Variables
 - Auto-deploy from GitHub
 - Custom domains
+- Webhook URL: `https://your-app.railway.app/webhook/yookassa`
 
 ### **Staging**
 ```bash
@@ -141,22 +160,52 @@ cp env.example .env.staging
 export ENVIRONMENT=staging
 ```
 
+## 💳 Настройка ЮKassa
+
+### **Тестовая среда**
+```env
+YOOKASSA_SHOP_ID=123456
+YOOKASSA_SECRET_KEY=test_abcd1234...
+YOOKASSA_ENABLED=true
+```
+
+### **Продакшн среда**
+```env
+YOOKASSA_SHOP_ID=live_shop_id
+YOOKASSA_SECRET_KEY=live_secret_key
+YOOKASSA_ENABLED=true
+```
+
+### **Webhook настройки**
+- URL: `https://your-app.railway.app/webhook/yookassa`
+- События: `payment.succeeded`, `payment.canceled`, `refund.succeeded`
+- Проверка подписи: включена (HMAC-SHA256)
+
 ## ⚠️ Важные замечания
 
 ### **Безопасность:**
 - Никогда не коммитить `.env` файлы
 - Ротация API ключей каждые 90 дней
 - Минимальные права для service accounts
+- Проверка подписи webhook'ов ЮKassa
 
 ### **Production:**
 - Всегда использовать HTTPS
 - Настроить мониторинг логов
 - Регулярный backup базы данных
+- Мониторинг webhook доставки
 
 ### **Development:**
 - Использовать отдельные API ключи
 - Тестовая база данных
 - Отключить rate limiting для тестов
+- Использовать `ngrok` для локальной отладки webhook'ов
+
+### **Платежи:**
+- Тестировать на тестовых картах ЮKassa
+- Мониторить успешность webhook'ов
+- Fallback на ручную обработку при сбоях
+- Логирование всех платежных операций
 
 ---
 

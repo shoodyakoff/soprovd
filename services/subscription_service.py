@@ -51,7 +51,7 @@ class SubscriptionService:
         
         Args:
             user_id: ID пользователя
-            force_refresh: Принудительно перечитать данные из БД (для исправления проблемы 2)
+            force_refresh: Принудительно перечитать данные из БД
             
         Возвращает: {
             'can_generate': bool,
@@ -59,69 +59,59 @@ class SubscriptionService:
             'letters_limit': int,
             'plan_type': str,
             'remaining': int,
-            'period_type': str
+            'period_type': str,
+            'is_active': bool,
+            'period_end': Optional[str]
         }
         """
-        if not self.enabled:
-            # Если подписки выключены - даем Free план вместо unlimited
+        if not self.enabled or not self.supabase:
+            logger.warning("Subscription service is disabled or Supabase client is not available.")
             return self._free_access_fallback()
         
         if force_refresh:
             logger.info(f"🔄 Force refreshing limits for user {user_id}")
         
         try:
-            if not self.supabase:
-                logger.warning("Supabase not available, giving Free access")
-                return self._free_access_fallback()
-            
-            # Получаем подписку пользователя
             response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
             
             if not response.data:
-                logger.info(f"No subscription found for user {user_id}, using existing analytics method")
-                # Используем существующий метод из analytics_service
+                logger.info(f"No subscription found for user {user_id}, attempting to create one.")
                 from services.analytics_service import analytics
-                subscription = await analytics.get_or_create_subscription(user_id)
-                if not subscription:
-                    logger.error(f"Failed to create subscription for user {user_id}")
-                    return self._free_access_fallback()
-                # Получаем созданную подписку
-                response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
-                if not response.data:
-                    logger.error(f"Analytics created subscription but not found in DB for user {user_id}")
+                if hasattr(analytics, 'supabase') and analytics.supabase:
+                    subscription = await analytics.get_or_create_subscription(user_id)
+                    if not subscription:
+                        logger.error(f"Failed to create subscription for user {user_id}")
+                        return self._free_access_fallback()
+                    
+                    response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
+                    if not response.data:
+                        logger.error(f"Analytics created subscription but not found in DB for user {user_id}")
+                        return self._free_access_fallback()
+                else:
+                    logger.error(f"Analytics service or its Supabase client is not available.")
                     return self._free_access_fallback()
             
             subscription = response.data[0]
             
-            letters_used = subscription['letters_used']
-            letters_limit = subscription['letters_limit']
-            plan_type = subscription['plan_type']
-            status = subscription['status']
-            period_end = subscription['period_end']
+            letters_used = subscription.get('letters_used', 0)
+            letters_limit = subscription.get('letters_limit', FREE_LETTERS_LIMIT)
+            plan_type = subscription.get('plan_type', 'free')
+            status = subscription.get('status', 'inactive')
+            period_end = subscription.get('period_end')
             
-            # Проверяем статус подписки
-            if status != 'active':
-                return {
-                    'can_generate': False,
-                    'letters_used': letters_used,
-                    'letters_limit': letters_limit,
-                    'plan_type': plan_type,
-                    'remaining': 0,
-                    'period_type': 'monthly' if plan_type == 'free' else 'daily',
-                    'error': 'Подписка неактивна'
-                }
+            is_active = status == 'active'
             
-            # Проверяем, не истек ли период (дневной для premium, месячный для free)
+            # Проверяем, не истек ли период
             today = date.today()
             period_end_date = self._parse_period_end_safely(period_end)
             
             if today > period_end_date:
-                # Период истек - сбрасываем счетчик
                 await self._reset_limits(user_id, plan_type)
                 letters_used = 0
+                is_active = plan_type == 'free' # Premium становится неактивным
             
             remaining = max(0, letters_limit - letters_used)
-            can_generate = remaining > 0
+            can_generate = remaining > 0 and is_active
             
             return {
                 'can_generate': can_generate,
@@ -129,12 +119,13 @@ class SubscriptionService:
                 'letters_limit': letters_limit,
                 'plan_type': plan_type,
                 'remaining': remaining,
-                'period_type': 'monthly' if plan_type == 'free' else 'daily'
+                'period_type': 'monthly' if plan_type == 'free' else 'daily',
+                'is_active': is_active,
+                'period_end': period_end
             }
             
         except Exception as e:
             logger.error(f"Error checking user limits: {e}")
-            # В случае ошибки даем Free доступ, а не unlimited
             return self._free_access_fallback()
     
 
@@ -343,6 +334,94 @@ class SubscriptionService:
             f"<b>Подписка:</b> {plan_name}\n"
             f"{emoji} <b>Писем осталось {period_text}:</b> {limits['remaining']}/{limits['letters_limit']}\n"
         )
+
+    async def activate_premium_subscription(self, user_id: int, payment_id: str = None) -> bool:
+        """
+        Активирует Premium подписку для пользователя после успешного платежа
+        
+        Args:
+            user_id: ID пользователя в БД
+            payment_id: ID платежа от ЮKassa (опционально, пока не применим миграцию)
+            
+        Returns:
+            True если активация успешна
+        """
+        try:
+            if not self.supabase:
+                logger.error(f"❌ Supabase not available for Premium activation for user {user_id}")
+                return False
+            
+            # Получаем текущую подписку
+            response = self.supabase.table('subscriptions').select('*').eq('user_id', user_id).execute()
+            
+            today = date.today()
+            
+            if response.data:
+                # Есть существующая подписка - ПРОДЛЕВАЕМ
+                current_subscription = response.data[0]
+                current_period_end = current_subscription.get('period_end')
+                
+                # Определяем новую дату окончания
+                if current_period_end:
+                    try:
+                        # Парсим текущую дату окончания
+                        if isinstance(current_period_end, str):
+                            current_end = datetime.fromisoformat(current_period_end.replace('Z', '+00:00')).date()
+                        else:
+                            current_end = current_period_end
+                        
+                        # Если подписка еще активна - продлеваем от текущей даты окончания
+                        if current_end > today:
+                            new_period_end = current_end + timedelta(days=30)
+                            logger.info(f"🔄 Extending active Premium subscription for user {user_id}: {current_end} → {new_period_end}")
+                        else:
+                            # Подписка истекла - начинаем с сегодня
+                            new_period_end = today + timedelta(days=30)
+                            logger.info(f"🔄 Renewing expired Premium subscription for user {user_id}: {today} → {new_period_end}")
+                            
+                    except Exception as e:
+                        logger.warning(f"⚠️ Error parsing current period_end, starting fresh: {e}")
+                        new_period_end = today + timedelta(days=30)
+                else:
+                    # Нет даты окончания - начинаем с сегодня
+                    new_period_end = today + timedelta(days=30)
+                    logger.info(f"🔄 Starting new Premium subscription for user {user_id}: {today} → {new_period_end}")
+            else:
+                # Нет подписки - создаем новую
+                new_period_end = today + timedelta(days=30)
+                logger.info(f"🆕 Creating new Premium subscription for user {user_id}: {today} → {new_period_end}")
+            
+            subscription_data = {
+                'user_id': user_id,
+                'plan_type': 'premium',
+                'status': 'active',
+                'letters_used': 0,  # Сбрасываем счетчик при продлении
+                'letters_limit': PREMIUM_LETTERS_LIMIT,
+                'period_start': today.isoformat(),
+                'period_end': new_period_end.isoformat(),
+                'upgraded_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }
+            
+            # Добавляем payment_id только если он не None
+            if payment_id is not None:
+                subscription_data['payment_id'] = payment_id
+            
+            if response.data:
+                # Обновляем существующую подписку
+                self.supabase.table('subscriptions').update(subscription_data).eq('user_id', user_id).execute()
+                logger.info(f"✅ Premium subscription extended for user {user_id} until {new_period_end}")
+            else:
+                # Создаем новую подписку
+                subscription_data['created_at'] = datetime.now().isoformat()
+                self.supabase.table('subscriptions').insert(subscription_data).execute()
+                logger.info(f"✅ Premium subscription created for user {user_id} until {new_period_end}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error activating Premium subscription for user {user_id}: {e}")
+            return False
 
 # Глобальный экземпляр
 subscription_service = SubscriptionService() 

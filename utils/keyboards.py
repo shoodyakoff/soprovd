@@ -143,4 +143,74 @@ def get_premium_info_keyboard():
             InlineKeyboardButton("◀️ Вернуться к боту", callback_data="back_to_bot")
         ]
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ============================================================================
+# ЮKASSA PAYMENT KEYBOARDS v10.1 - АВТОМАТИЧЕСКИЕ ПЛАТЕЖИ
+# ============================================================================
+
+def get_payment_keyboard(payment_url: str):
+    """Клавиатура для оплаты Premium через ЮKassa"""
+    keyboard = [
+        [
+            InlineKeyboardButton("💳 Оплатить 199₽", url=payment_url)
+        ],
+        [
+            InlineKeyboardButton("❌ Отменить", callback_data="cancel_payment")
+        ],
+        [
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_payment_success_keyboard():
+    """Клавиатура после успешной оплаты"""
+    keyboard = [
+        [
+            InlineKeyboardButton("✍️ Написать сопроводительное", callback_data="start_work")
+        ],
+        [
+            InlineKeyboardButton("📊 Моя подписка", callback_data="subscription_info")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_payment_error_keyboard():
+    """Клавиатура при ошибке оплаты"""
+    keyboard = [
+        [
+            InlineKeyboardButton("🔄 Попробовать снова", callback_data="retry_payment")
+        ],
+        [
+            InlineKeyboardButton("📞 Написать в поддержку", callback_data="contact_support")
+        ],
+        [
+            InlineKeyboardButton("◀️ Назад", callback_data="back_to_premium")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_payment_processing_keyboard():
+    """Клавиатура во время обработки платежа"""
+    keyboard = [
+        [
+            InlineKeyboardButton("⏳ Обрабатывается...", callback_data="payment_processing")
+        ],
+        [
+            InlineKeyboardButton("📞 Поддержка", callback_data="contact_support")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_premium_activation_keyboard():
+    """Клавиатура после активации Premium подписки"""
+    keyboard = [
+        [
+            InlineKeyboardButton("✍️ Написать сопроводительное", callback_data="start_work")
+        ],
+        [
+            InlineKeyboardButton("📊 Моя подписка", callback_data="subscription_info")
+        ]
+    ]
     return InlineKeyboardMarkup(keyboard) 
