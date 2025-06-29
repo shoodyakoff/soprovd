@@ -73,12 +73,9 @@ app = FastAPI(
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "payments_enabled": YOOKASSA_ENABLED,
-        "test_mode": True  # В продакшене будет False
-    }
+    """Простая конечная точка для проверки работоспособности сервиса."""
+    logger.info("✅ Health check endpoint was hit!")
+    return {"status": "OK"}
 
 @app.get("/webhook/health")
 async def webhook_health():
